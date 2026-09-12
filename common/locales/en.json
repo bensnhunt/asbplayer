@@ -280,6 +280,7 @@
             "connecting": "Connecting to the local Whisper service…",
             "downloading": "Downloading audio ({{progress}}%)",
             "transcribing": "Transcribing audio with Whisper…",
+            "timeRemaining": "About {{time}} remaining",
             "queued": "Waiting for the local Whisper service…",
             "completed": "Generated subtitles are ready in the selector.",
             "cancel": "Cancel generation",

@@ -280,6 +280,7 @@
             "connecting": "Łączenie z lokalną usługą Whisper…",
             "downloading": "Pobieranie dźwięku ({{progress}}%)",
             "transcribing": "Transkrypcja dźwięku za pomocą Whisper…",
+            "timeRemaining": "Pozostało około {{time}}",
             "queued": "Oczekiwanie na lokalną usługę Whisper…",
             "completed": "Wygenerowane napisy są gotowe w selektorze.",
             "cancel": "Anuluj generowanie",

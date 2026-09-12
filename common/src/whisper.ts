@@ -40,6 +40,7 @@ export interface SubtitleGenerationJob {
     readonly id: string;
     readonly state: SubtitleGenerationJobState;
     readonly progress?: number;
+    readonly remainingSeconds?: number;
     readonly error?: string;
     readonly entry?: GeneratedSubtitleCacheEntry;
 }

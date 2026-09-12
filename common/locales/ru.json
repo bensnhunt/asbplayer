@@ -280,6 +280,7 @@
             "connecting": "Подключение к локальной службе Whisper…",
             "downloading": "Загрузка аудио ({{progress}}%)",
             "transcribing": "Расшифровка аудио с помощью Whisper…",
+            "timeRemaining": "Осталось примерно {{time}}",
             "queued": "Ожидание локальной службы Whisper…",
             "completed": "Созданные субтитры доступны в селекторе.",
             "cancel": "Отменить создание",

@@ -4,7 +4,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from asbplayer_whisper_server.main import cache_key, normalize_url, source_key, validate_options, whisper_line_progress
+from asbplayer_whisper_server.main import (
+    cache_key,
+    normalize_url,
+    source_key,
+    validate_options,
+    whisper_line_progress,
+    whisper_tqdm_remaining_seconds,
+    whisper_tqdm_progress,
+)
 
 
 class WhisperServerTests(unittest.TestCase):
@@ -32,6 +40,17 @@ class WhisperServerTests(unittest.TestCase):
         self.assertEqual(whisper_line_progress("[00:12.000 --> 00:30.000] A subtitle", 120), 25)
         self.assertEqual(whisper_line_progress("[01:00:00.000 --> 01:30:00.000] A subtitle", 7200), 75)
         self.assertIsNone(whisper_line_progress("Detecting language", 120))
+
+    def test_reports_transcription_progress_from_whisper_frame_counter(self):
+        self.assertEqual(whisper_tqdm_progress(" 36%|###6      | 2,200/6,060 [00:10<00:17, 215.65frames/s]"), 36)
+        self.assertEqual(whisper_tqdm_progress("100%|##########| 6060/6060 [00:21<00:00, 295.05frames/s]"), 100)
+        self.assertIsNone(whisper_tqdm_progress("Detected language: Turkish"))
+
+    def test_reports_remaining_time_from_whisper_frame_counter(self):
+        self.assertEqual(
+            whisper_tqdm_remaining_seconds(" 36%|###6      | 2,200/6,060 [00:10<01:17, 215.65frames/s]"), 77
+        )
+        self.assertIsNone(whisper_tqdm_remaining_seconds("  0%|          | 0/6,060 [00:00<?, ?frames/s]"))
 
 
 if __name__ == "__main__":

@@ -22,6 +22,16 @@ interface Props {
 
 const activeStates = new Set(['queued', 'downloading', 'transcribing']);
 
+const formatRemainingTime = (seconds: number) => {
+    const totalSeconds = Math.max(0, Math.round(seconds));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const secondsPart = totalSeconds % 60;
+    const paddedMinutes = String(minutes).padStart(2, '0');
+    const paddedSeconds = String(secondsPart).padStart(2, '0');
+    return hours > 0 ? `${hours}:${paddedMinutes}:${paddedSeconds}` : `${minutes}:${paddedSeconds}`;
+};
+
 /** A non-editable progress window displayed for the lifetime of a Whisper job. */
 export default function SubtitleGenerationProgressDialog({ open, generation, onPoll, onCancel, onClose }: Props) {
     const { t } = useTranslation();
@@ -70,6 +80,13 @@ export default function SubtitleGenerationProgressDialog({ open, generation, onP
                             variant={activeJob.progress !== undefined ? 'determinate' : 'indeterminate'}
                             value={activeJob.progress}
                         />
+                        {activeJob.remainingSeconds !== undefined && activeJob.remainingSeconds > 0 && (
+                            <Typography aria-live="polite" variant="caption" sx={{ display: 'block', mt: 1 }}>
+                                {t('extension.subtitleGeneration.timeRemaining', {
+                                    time: formatRemainingTime(activeJob.remainingSeconds),
+                                })}
+                            </Typography>
+                        )}
                     </Box>
                 )}
                 {!activeJob && !generation.error && !generation.job?.error && generation.job?.state !== 'completed' && (

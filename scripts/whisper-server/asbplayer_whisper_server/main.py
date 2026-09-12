@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -28,6 +29,10 @@ logger = logging.getLogger("uvicorn.error")
 WHISPER_TIMESTAMP_RANGE = re.compile(
     r"\[(?P<start>\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*-->\s*(?P<end>\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?)\]"
 )
+WHISPER_TQDM_PROGRESS = re.compile(
+    r"(?P<percent>\d{1,3})%\|.*?\|\s*(?P<current>[\d,]+)/(?P<total>[\d,]+)"
+)
+WHISPER_TQDM_REMAINING = re.compile(r"<(?P<remaining>\d+:\d{2}(?::\d{2})?)")
 
 
 @dataclass(frozen=True)
@@ -93,7 +98,7 @@ OPTION_SPECS = (
         "boolean",
         True,
         False,
-        "Keep enabled to report timestamp-based transcription progress.",
+        "Shows timestamped segments. When disabled, progress uses Whisper's frame counter.",
     ),
     OptionSpec("task", "Task", "Transcription", "string", "transcribe", True, choices=("transcribe", "translate")),
     OptionSpec("language", "Source language", "Transcription", "string", None, True, "Leave blank for auto-detection."),
@@ -144,6 +149,8 @@ class Job:
     entry: dict[str, Any] | None = None
     last_reported_progress: int | None = None
     duration_seconds: float | None = None
+    remaining_seconds: int | None = None
+    transcription_started_at: float | None = None
     cancel_requested: threading.Event = field(default_factory=threading.Event)
     process: subprocess.Popen[bytes] | None = None
 
@@ -151,6 +158,8 @@ class Job:
         result: dict[str, Any] = {"id": self.id, "state": self.state}
         if self.progress is not None:
             result["progress"] = self.progress
+        if self.remaining_seconds is not None:
+            result["remainingSeconds"] = self.remaining_seconds
         if self.error:
             result["error"] = self.error
         if self.entry:
@@ -215,6 +224,24 @@ def whisper_line_progress(line: str, duration_seconds: float | None) -> int | No
     if not match:
         return None
     return max(0, min(100, round(timestamp_seconds(match.group("end")) / duration_seconds * 100)))
+
+
+def whisper_tqdm_progress(line: str) -> int | None:
+    match = WHISPER_TQDM_PROGRESS.search(line)
+    if not match:
+        return None
+    current = int(match.group("current").replace(",", ""))
+    total = int(match.group("total").replace(",", ""))
+    if total <= 0:
+        return None
+    return max(0, min(100, round(current / total * 100)))
+
+
+def whisper_tqdm_remaining_seconds(line: str) -> int | None:
+    match = WHISPER_TQDM_REMAINING.search(line)
+    if not match:
+        return None
+    return round(timestamp_seconds(match.group("remaining")))
 
 
 def resolve_source_identity(source_url: str) -> dict[str, str]:
@@ -414,8 +441,10 @@ class JobManager:
 
     def _transcribe(self, job: Job, audio_file: Path, temporary_path: Path) -> None:
         job.state = "transcribing"
-        job.progress = 0 if job.duration_seconds and job.options["verbose"] else None
+        job.progress = 0 if job.duration_seconds or not job.options["verbose"] else None
         job.last_reported_progress = None
+        job.remaining_seconds = None
+        job.transcription_started_at = time.monotonic()
         output_directory = temporary_path / "output"
         output_directory.mkdir()
         executable = shutil.which("whisper")
@@ -444,32 +473,62 @@ class JobManager:
         )
         if job.duration_seconds:
             logger.info("Whisper job %s duration is %.1f seconds", job.id, job.duration_seconds)
-        else:
+        elif job.options["verbose"]:
             logger.warning("Whisper job %s has no media duration; transcription progress is unavailable", job.id)
         if not job.options["verbose"]:
-            logger.warning("Whisper job %s has verbose logging disabled; transcription progress is unavailable", job.id)
-        job.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            logger.info("Whisper job %s will report progress from Whisper's frame counter", job.id)
+        whisper_environment = os.environ.copy()
+        whisper_environment["PYTHONUNBUFFERED"] = "1"
+        job.process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env=whisper_environment,
+        )
         output_lines: deque[str] = deque(maxlen=100)
+
+        def update_progress(progress: int, source: str, remaining_seconds: int | None = None) -> None:
+            job.progress = progress
+            if remaining_seconds is not None:
+                job.remaining_seconds = remaining_seconds
+            elif job.transcription_started_at is not None and 0 < progress < 100:
+                elapsed_seconds = time.monotonic() - job.transcription_started_at
+                job.remaining_seconds = max(0, round(elapsed_seconds * (100 - progress) / progress))
+            elif progress == 100:
+                job.remaining_seconds = 0
+            if (
+                job.last_reported_progress is None
+                or progress >= job.last_reported_progress + 5
+                or progress == 100
+            ):
+                logger.info("Whisper job %s %s: %d%%", job.id, source, progress)
+                job.last_reported_progress = progress
+
+        def handle_whisper_line(line: str) -> None:
+            line = line.strip()
+            if not line:
+                return
+            output_lines.append(line)
+            tqdm_progress = whisper_tqdm_progress(line)
+            if tqdm_progress is not None:
+                update_progress(tqdm_progress, "frame progress", whisper_tqdm_remaining_seconds(line))
+                return
+            logger.info("Whisper job %s: %s", job.id, line)
+            timestamp_progress = whisper_line_progress(line, job.duration_seconds)
+            if timestamp_progress is not None:
+                update_progress(timestamp_progress, "timestamp progress")
 
         def log_whisper_output() -> None:
             if job.process is None or job.process.stdout is None:
                 return
-            for output in iter(job.process.stdout.readline, b""):
-                line = output.decode(errors="replace").strip()
-                if not line:
-                    continue
-                output_lines.append(line)
-                logger.info("Whisper job %s: %s", job.id, line)
-                progress = whisper_line_progress(line, job.duration_seconds)
-                if progress is not None:
-                    job.progress = progress
-                    if (
-                        job.last_reported_progress is None
-                        or progress >= job.last_reported_progress + 5
-                        or progress == 100
-                    ):
-                        logger.info("Whisper job %s transcription: %d%%", job.id, progress)
-                        job.last_reported_progress = progress
+            buffered_output = ""
+            while output := job.process.stdout.read1(1024):
+                buffered_output += output.decode(errors="replace")
+                lines = re.split(r"[\r\n]", buffered_output)
+                buffered_output = lines.pop()
+                for line in lines:
+                    handle_whisper_line(line)
+            handle_whisper_line(buffered_output)
 
         output_thread = threading.Thread(target=log_whisper_output, name=f"whisper-output-{job.id}", daemon=True)
         output_thread.start()
@@ -487,6 +546,7 @@ class JobManager:
             error_output = "\n".join(list(output_lines)[-10:]).strip()
             raise RuntimeError(error_output or f"Whisper exited with code {job.process.returncode}")
         job.progress = 100
+        job.remaining_seconds = 0
         logger.info("Whisper job %s finished transcribing", job.id)
 
     def _store_entry(self, job: Job, subtitle_file: Path) -> dict[str, Any]:
