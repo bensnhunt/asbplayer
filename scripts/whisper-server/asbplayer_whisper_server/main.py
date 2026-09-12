@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -21,6 +22,7 @@ from pydantic import BaseModel, Field
 
 
 DEFAULT_CACHE_ROOT = Path(os.environ.get("ASBPLAYER_WHISPER_CACHE_DIR", Path.home() / ".cache/asbplayer/whisper"))
+logger = logging.getLogger("uvicorn.error")
 
 
 @dataclass(frozen=True)
@@ -127,6 +129,7 @@ class Job:
     progress: int | None = None
     error: str | None = None
     entry: dict[str, Any] | None = None
+    last_reported_progress: int | None = None
     cancel_requested: threading.Event = field(default_factory=threading.Event)
     process: subprocess.Popen[bytes] | None = None
 
@@ -213,6 +216,7 @@ class JobManager:
     async def start(self) -> None:
         self.entries_root.mkdir(parents=True, exist_ok=True)
         self.worker = asyncio.create_task(self._work())
+        logger.info("Whisper job worker started; cache directory: %s", self.cache_root)
 
     async def stop(self) -> None:
         if self.worker:
@@ -249,6 +253,7 @@ class JobManager:
         entry_id = cache_key(identity, options)
         metadata = self.read_entry(entry_id)
         if metadata:
+            logger.info("Whisper job cache hit for %s", entry_id[:12])
             return Job(
                 id=f"cache-{entry_id[:12]}",
                 source_url=request.sourceUrl,
@@ -262,6 +267,7 @@ class JobManager:
 
         for job in self.jobs.values():
             if job.cache_id == entry_id and job.state in {"queued", "downloading", "transcribing"}:
+                logger.info("Whisper job %s already exists for this source", job.id)
                 return job
 
         job = Job(
@@ -274,6 +280,7 @@ class JobManager:
         )
         self.jobs[job.id] = job
         await self.queue.put(job)
+        logger.info("Whisper job %s queued (model=%s, task=%s)", job.id, options["model"], options["task"])
         return job
 
     async def _work(self) -> None:
@@ -282,7 +289,9 @@ class JobManager:
             try:
                 if job.cancel_requested.is_set():
                     job.state = "cancelled"
+                    logger.info("Whisper job %s cancelled before it started", job.id)
                 else:
+                    logger.info("Whisper job %s started", job.id)
                     await asyncio.to_thread(self._run, job)
             finally:
                 self.queue.task_done()
@@ -292,30 +301,39 @@ class JobManager:
             with tempfile.TemporaryDirectory(prefix="asbplayer-whisper-") as temporary_directory:
                 temporary_path = Path(temporary_directory)
                 audio_file = self._download_audio(job, temporary_path)
+                logger.info("Whisper job %s downloaded audio (%d bytes)", job.id, audio_file.stat().st_size)
                 if job.cancel_requested.is_set():
                     job.state = "cancelled"
+                    logger.info("Whisper job %s cancelled after download", job.id)
                     return
                 self._transcribe(job, audio_file, temporary_path)
                 if job.cancel_requested.is_set():
                     job.state = "cancelled"
+                    logger.info("Whisper job %s cancelled during transcription", job.id)
                     return
                 subtitle_file = next(temporary_path.glob("output/**/*.srt"), None)
                 if subtitle_file is None:
                     raise RuntimeError("Whisper completed without producing an SRT file")
                 job.entry = self._store_entry(job, subtitle_file)
                 job.state = "completed"
+                logger.info("Whisper job %s completed and cached as %s", job.id, job.cache_id[:12])
         except Exception as error:
             job.state = "cancelled" if job.cancel_requested.is_set() else "failed"
             if job.state == "failed":
                 job.error = str(error)
+                logger.exception("Whisper job %s failed: %s", job.id, error)
+            else:
+                logger.info("Whisper job %s cancelled", job.id)
         finally:
             job.process = None
+            logger.info("Whisper job %s finished with state=%s", job.id, job.state)
 
     def _download_audio(self, job: Job, temporary_path: Path) -> Path:
         import yt_dlp
         from yt_dlp.utils import DownloadError
 
         job.state = "downloading"
+        logger.info("Whisper job %s is downloading audio", job.id)
 
         def progress_hook(progress: dict[str, Any]) -> None:
             if job.cancel_requested.is_set():
@@ -325,6 +343,13 @@ class JobManager:
                 downloaded = progress.get("downloaded_bytes", 0)
                 if total:
                     job.progress = max(0, min(100, round(downloaded / total * 100)))
+                    if (
+                        job.last_reported_progress is None
+                        or job.progress >= job.last_reported_progress + 10
+                        or job.progress == 100
+                    ):
+                        logger.info("Whisper job %s audio download: %d%%", job.id, job.progress)
+                        job.last_reported_progress = job.progress
 
         options = {
             "format": "bestaudio/best",
@@ -374,7 +399,29 @@ class JobManager:
             if value is None:
                 continue
             command.extend([f"--{spec.name}", str(value)])
-        job.process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        logger.info(
+            "Whisper job %s is transcribing (model=%s, task=%s, language=%s, device=%s)",
+            job.id,
+            job.options["model"],
+            job.options["task"],
+            job.options["language"] or "auto",
+            job.options["device"],
+        )
+        job.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        output_lines: list[str] = []
+
+        def log_whisper_output() -> None:
+            if job.process is None or job.process.stdout is None:
+                return
+            for output in iter(job.process.stdout.readline, b""):
+                line = output.decode(errors="replace").strip()
+                if not line:
+                    continue
+                output_lines.append(line)
+                logger.info("Whisper job %s: %s", job.id, line)
+
+        output_thread = threading.Thread(target=log_whisper_output, name=f"whisper-output-{job.id}", daemon=True)
+        output_thread.start()
         while job.process.poll() is None:
             if job.cancel_requested.wait(0.25):
                 job.process.terminate()
@@ -382,10 +429,13 @@ class JobManager:
                     job.process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     job.process.kill()
+                output_thread.join(timeout=1)
                 return
+        output_thread.join(timeout=1)
         if job.process.returncode != 0:
-            error_output = (job.process.stderr.read() if job.process.stderr else b"").decode(errors="replace").strip()
+            error_output = "\n".join(output_lines[-10:]).strip()
             raise RuntimeError(error_output or f"Whisper exited with code {job.process.returncode}")
+        logger.info("Whisper job %s finished transcribing", job.id)
 
     def _store_entry(self, job: Job, subtitle_file: Path) -> dict[str, Any]:
         created_at = datetime.now(timezone.utc).isoformat()
@@ -411,6 +461,7 @@ class JobManager:
             os.replace(temporary_destination, destination)
         else:
             shutil.rmtree(temporary_destination)
+        logger.info("Whisper job %s saved cache entry %s", job.id, job.cache_id[:12])
         return self.public_entry(self.read_entry(job.cache_id) or metadata)
 
     async def cached(self, source_url: str) -> list[dict[str, Any]]:
@@ -441,6 +492,7 @@ class JobManager:
         job.cancel_requested.set()
         if job.state == "queued":
             job.state = "cancelled"
+        logger.info("Whisper job %s cancellation requested", job.id)
         return job
 
 

@@ -34,6 +34,7 @@ import { StyledEngineProvider } from '@mui/material/styles';
 import type { FileWithId } from '@project/common/file-selector';
 import { DefaultFileSelector } from '@project/common/file-selector';
 import SubtitleGenerationDialog from '@project/extension/src/ui/components/SubtitleGenerationDialog';
+import SubtitleGenerationProgressDialog from '@project/extension/src/ui/components/SubtitleGenerationProgressDialog';
 
 interface Props {
     bridge: Bridge;
@@ -61,6 +62,7 @@ export default function VideoDataSyncUi({ bridge }: Props) {
     });
     const [subtitleGeneration, setSubtitleGeneration] = useState<SubtitleGenerationUiState>({ state: 'idle' });
     const [subtitleGenerationOpen, setSubtitleGenerationOpen] = useState(false);
+    const [subtitleGenerationProgressOpen, setSubtitleGenerationProgressOpen] = useState(false);
     const [pendingGeneratedTrackId, setPendingGeneratedTrackId] = useState<string>();
     const trackedLocalObjectUrlsRef = useRef(new Set<string>());
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -103,6 +105,8 @@ export default function VideoDataSyncUi({ bridge }: Props) {
                 jobId: job.id,
             } as SubtitleGenerationMessage);
         }
+        setSubtitleGenerationOpen(false);
+        setSubtitleGenerationProgressOpen(false);
         closeSubtitleTrackSelector();
         bridge.sendMessageFromServer({ command: 'cancel' });
     }, [bridge, closeSubtitleTrackSelector, subtitleGeneration.job]);
@@ -223,7 +227,9 @@ export default function VideoDataSyncUi({ bridge }: Props) {
 
             if (model.subtitleGeneration !== undefined) {
                 setSubtitleGeneration((current) =>
-                    model.subtitleGeneration?.state === 'idle'
+                    model.subtitleGeneration?.state === 'idle' ||
+                    model.subtitleGeneration?.state === 'loading' ||
+                    model.subtitleGeneration?.state === 'ready'
                         ? model.subtitleGeneration
                         : { ...current, ...model.subtitleGeneration }
                 );
@@ -361,12 +367,16 @@ export default function VideoDataSyncUi({ bridge }: Props) {
         [bridge]
     );
     const handleOpenSubtitleGeneration = useCallback(() => {
+        setSubtitleGenerationProgressOpen(false);
         setSubtitleGenerationOpen(true);
         sendSubtitleGeneration({ operation: 'capabilities' });
     }, [sendSubtitleGeneration]);
     const handleStartSubtitleGeneration = useCallback(
-        (whisperOptions: Record<string, WhisperOptionValue>) =>
-            sendSubtitleGeneration({ operation: 'start', whisperOptions }),
+        (whisperOptions: Record<string, WhisperOptionValue>) => {
+            setSubtitleGenerationOpen(false);
+            setSubtitleGenerationProgressOpen(true);
+            sendSubtitleGeneration({ operation: 'start', whisperOptions });
+        },
         [sendSubtitleGeneration]
     );
     const handleCancelSubtitleGeneration = useCallback(
@@ -411,12 +421,17 @@ export default function VideoDataSyncUi({ bridge }: Props) {
                     onGenericSubtitleParserChange={handleGenericSubtitleParserChange}
                 />
                 <SubtitleGenerationDialog
-                    open={subtitleGenerationOpen}
+                    open={subtitleTrackSelectorOpen && subtitleGenerationOpen}
                     generation={subtitleGeneration}
                     onStart={handleStartSubtitleGeneration}
+                    onClose={() => setSubtitleGenerationOpen(false)}
+                />
+                <SubtitleGenerationProgressDialog
+                    open={subtitleTrackSelectorOpen && subtitleGenerationProgressOpen}
+                    generation={subtitleGeneration}
                     onPoll={(jobId) => sendSubtitleGeneration({ operation: 'status', jobId })}
                     onCancel={handleCancelSubtitleGeneration}
-                    onClose={() => setSubtitleGenerationOpen(false)}
+                    onClose={() => setSubtitleGenerationProgressOpen(false)}
                 />
                 <input
                     ref={fileInputRef}

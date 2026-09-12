@@ -1,5 +1,4 @@
 import Alert from '@mui/material/Alert';
-import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import Dialog from '@mui/material/Dialog';
@@ -10,7 +9,6 @@ import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Grid from '@mui/material/Grid';
-import LinearProgress from '@mui/material/LinearProgress';
 import MenuItem from '@mui/material/MenuItem';
 import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
@@ -23,22 +21,18 @@ interface Props {
     open: boolean;
     generation: SubtitleGenerationUiState;
     onStart: (options: Record<string, WhisperOptionValue>) => void;
-    onPoll: (jobId: string) => void;
-    onCancel: (jobId: string) => void;
     onClose: () => void;
 }
-
-const activeStates = new Set(['queued', 'downloading', 'transcribing']);
 
 const optionValue = (value: string, type: 'string' | 'number' | 'boolean'): WhisperOptionValue => {
     if (type === 'number') return value === '' ? null : Number(value);
     return value;
 };
 
-export default function SubtitleGenerationDialog({ open, generation, onStart, onPoll, onCancel, onClose }: Props) {
+/** The editable Whisper configuration shown before a subtitle job begins. */
+export default function SubtitleGenerationDialog({ open, generation, onStart, onClose }: Props) {
     const { t } = useTranslation();
     const [options, setOptions] = useState<Record<string, WhisperOptionValue>>({});
-    const activeJob = generation.job && activeStates.has(generation.job.state) ? generation.job : undefined;
     const groupedOptions = useMemo(() => {
         const groups = new Map<string, WhisperOptionSchema[]>();
         for (const option of generation.capabilities?.options ?? []) {
@@ -54,28 +48,8 @@ export default function SubtitleGenerationDialog({ open, generation, onStart, on
         );
     }, [generation.capabilities]);
 
-    useEffect(() => {
-        if (!activeJob) return;
-        const timer = window.setInterval(() => onPoll(activeJob.id), 1000);
-        return () => window.clearInterval(timer);
-    }, [activeJob, onPoll]);
-
-    const close = () => {
-        if (activeJob) onCancel(activeJob.id);
-        onClose();
-    };
-
-    const stateText =
-        generation.job?.state === 'downloading' && generation.job.progress !== undefined
-            ? t('extension.subtitleGeneration.downloading', { progress: generation.job.progress })
-            : generation.job?.state === 'transcribing'
-              ? t('extension.subtitleGeneration.transcribing')
-              : generation.job?.state === 'queued'
-                ? t('extension.subtitleGeneration.queued')
-                : undefined;
-
     return (
-        <Dialog open={open} onClose={close} fullWidth maxWidth="md">
+        <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
             <DialogTitle>{t('extension.subtitleGeneration.title')}</DialogTitle>
             <DialogContent>
                 <DialogContentText sx={{ mb: 2 }}>{t('extension.subtitleGeneration.description')}</DialogContentText>
@@ -96,26 +70,6 @@ export default function SubtitleGenerationDialog({ open, generation, onStart, on
                 {generation.state === 'loading' && (
                     <Alert icon={<CircularProgress size={18} />} severity="info" sx={{ mb: 2 }}>
                         {t('extension.subtitleGeneration.connecting')}
-                    </Alert>
-                )}
-                {activeJob && (
-                    <Box sx={{ mb: 2 }}>
-                        <Typography aria-live="polite" variant="body2" sx={{ mb: 1 }}>
-                            {stateText}
-                        </Typography>
-                        <LinearProgress
-                            variant={
-                                activeJob.state === 'downloading' && activeJob.progress !== undefined
-                                    ? 'determinate'
-                                    : 'indeterminate'
-                            }
-                            value={activeJob.progress}
-                        />
-                    </Box>
-                )}
-                {generation.job?.state === 'completed' && (
-                    <Alert severity="success" sx={{ mb: 2 }}>
-                        {t('extension.subtitleGeneration.completed')}
                     </Alert>
                 )}
                 {groupedOptions.map(([group, groupOptions]) => (
@@ -171,12 +125,8 @@ export default function SubtitleGenerationDialog({ open, generation, onStart, on
                 ))}
             </DialogContent>
             <DialogActions>
-                {activeJob ? (
-                    <Button onClick={() => onCancel(activeJob.id)}>{t('extension.subtitleGeneration.cancel')}</Button>
-                ) : (
-                    <Button onClick={onClose}>{t('extension.subtitleGeneration.close')}</Button>
-                )}
-                <Button disabled={!generation.capabilities || Boolean(activeJob)} onClick={() => onStart(options)}>
+                <Button onClick={onClose}>{t('extension.subtitleGeneration.close')}</Button>
+                <Button disabled={!generation.capabilities} onClick={() => onStart(options)}>
                     {t('extension.subtitleGeneration.generate')}
                 </Button>
             </DialogActions>
