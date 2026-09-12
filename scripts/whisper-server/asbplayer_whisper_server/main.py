@@ -313,6 +313,7 @@ class JobManager:
 
     def _download_audio(self, job: Job, temporary_path: Path) -> Path:
         import yt_dlp
+        from yt_dlp.utils import DownloadError
 
         job.state = "downloading"
 
@@ -333,12 +334,19 @@ class JobManager:
             "no_warnings": True,
             "progress_hooks": [progress_hook],
         }
-        with yt_dlp.YoutubeDL(options) as downloader:
-            info = downloader.extract_info(job.source_url, download=True)
-            requested = info.get("requested_downloads") or []
-            if requested and requested[0].get("filepath"):
-                return Path(requested[0]["filepath"])
-            expected = Path(downloader.prepare_filename(info))
+        try:
+            with yt_dlp.YoutubeDL(options) as downloader:
+                info = downloader.extract_info(job.source_url, download=True)
+                requested = info.get("requested_downloads") or []
+                if requested and requested[0].get("filepath"):
+                    return Path(requested[0]["filepath"])
+                expected = Path(downloader.prepare_filename(info))
+        except DownloadError as error:
+            raise RuntimeError(
+                "yt-dlp could not download audio from this video. Update yt-dlp and ensure yt-dlp-ejs plus a "
+                "supported JavaScript runtime (such as Node.js) are installed. "
+                f"Detail: {error}"
+            ) from error
         if expected.exists():
             return expected
         audio_files = [path for path in temporary_path.glob("audio.*") if path.is_file()]

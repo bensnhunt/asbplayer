@@ -22,6 +22,13 @@ asbplayer-whisper-server
 
 On Windows, activate the virtual environment with `.venv\\Scripts\\activate` instead. The first transcription downloads the selected Whisper model, which can take time and disk space.
 
+For reliable YouTube support, install a JavaScript runtime as well (on macOS, `brew install node`). yt-dlp's extractors change frequently; if a source starts reporting an extraction or page-reload error, stop the service and update its downloader in the same virtual environment:
+
+```bash
+python -m pip install --upgrade --pre "yt-dlp[default,curl-cffi]" yt-dlp-ejs
+asbplayer-whisper-server
+```
+
 The service listens only on `http://127.0.0.1:8767`. Confirm that it is running with:
 
 ```bash
