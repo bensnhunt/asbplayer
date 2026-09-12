@@ -1,4 +1,5 @@
 import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import Dialog from '@mui/material/Dialog';
@@ -9,6 +10,7 @@ import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Grid from '@mui/material/Grid';
+import LinearProgress from '@mui/material/LinearProgress';
 import MenuItem from '@mui/material/MenuItem';
 import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
@@ -91,10 +93,25 @@ export default function SubtitleGenerationDialog({ open, generation, onStart, on
                         {generation.error}
                     </Alert>
                 )}
-                {(generation.state === 'loading' || stateText) && (
+                {generation.state === 'loading' && (
                     <Alert icon={<CircularProgress size={18} />} severity="info" sx={{ mb: 2 }}>
-                        {stateText ?? t('extension.subtitleGeneration.connecting')}
+                        {t('extension.subtitleGeneration.connecting')}
                     </Alert>
+                )}
+                {activeJob && (
+                    <Box sx={{ mb: 2 }}>
+                        <Typography aria-live="polite" variant="body2" sx={{ mb: 1 }}>
+                            {stateText}
+                        </Typography>
+                        <LinearProgress
+                            variant={
+                                activeJob.state === 'downloading' && activeJob.progress !== undefined
+                                    ? 'determinate'
+                                    : 'indeterminate'
+                            }
+                            value={activeJob.progress}
+                        />
+                    </Box>
                 )}
                 {generation.job?.state === 'completed' && (
                     <Alert severity="success" sx={{ mb: 2 }}>
