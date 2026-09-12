@@ -86,7 +86,15 @@ OPTION_SPECS = (
     ),
     OptionSpec("model_dir", "Model directory", "Runtime", "string", None, False),
     OptionSpec("device", "Device", "Runtime", "string", "cpu", False),
-    OptionSpec("verbose", "Verbose logging", "Runtime", "boolean", True, False),
+    OptionSpec(
+        "verbose",
+        "Verbose logging",
+        "Runtime",
+        "boolean",
+        True,
+        False,
+        "Keep enabled to report timestamp-based transcription progress.",
+    ),
     OptionSpec("task", "Task", "Transcription", "string", "transcribe", True, choices=("transcribe", "translate")),
     OptionSpec("language", "Source language", "Transcription", "string", None, True, "Leave blank for auto-detection."),
     OptionSpec("temperature", "Temperature", "Decoding", "number", 0, True),
@@ -406,7 +414,7 @@ class JobManager:
 
     def _transcribe(self, job: Job, audio_file: Path, temporary_path: Path) -> None:
         job.state = "transcribing"
-        job.progress = 0 if job.duration_seconds else None
+        job.progress = 0 if job.duration_seconds and job.options["verbose"] else None
         job.last_reported_progress = None
         output_directory = temporary_path / "output"
         output_directory.mkdir()
@@ -438,6 +446,8 @@ class JobManager:
             logger.info("Whisper job %s duration is %.1f seconds", job.id, job.duration_seconds)
         else:
             logger.warning("Whisper job %s has no media duration; transcription progress is unavailable", job.id)
+        if not job.options["verbose"]:
+            logger.warning("Whisper job %s has verbose logging disabled; transcription progress is unavailable", job.id)
         job.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         output_lines: deque[str] = deque(maxlen=100)
 
