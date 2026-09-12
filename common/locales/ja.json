@@ -280,6 +280,7 @@
             "connecting": "ローカルのWhisperサービスに接続中…",
             "downloading": "音声をダウンロード中（{{progress}}%）",
             "transcribing": "Whisperで音声を文字起こし中…",
+            "frameProgress": "{{current}} / {{total}} フレーム",
             "timeRemaining": "残り約{{time}}",
             "queued": "ローカルのWhisperサービスを待機中…",
             "completed": "生成した字幕をセレクターで選択できます。",

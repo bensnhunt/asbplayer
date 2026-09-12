@@ -49,5 +49,5 @@ The service stores completed SRT files in your local user cache directory. A rev
 ## Notes
 
 - The generator is not available for local video files or mobile extension builds.
-- The popup exposes every option from the version-pinned Whisper command line except the input audio and output directory/format: asbplayer supplies the current page URL and always requests an SRT.
+- The popup exposes every option from the version-pinned Whisper command line except input audio, output directory/format, and verbose output. asbplayer supplies the current page URL, always requests an SRT, and uses Whisper's native frame counter and time estimate for progress.
 - Long videos can take substantial time, CPU/GPU memory, and disk space. The service runs one job at a time to avoid competing Whisper processes.

@@ -36,12 +36,14 @@ const formatRemainingTime = (seconds: number) => {
 export default function SubtitleGenerationProgressDialog({ open, generation, onPoll, onCancel, onClose }: Props) {
     const { t } = useTranslation();
     const activeJob = generation.job && activeStates.has(generation.job.state) ? generation.job : undefined;
+    const activeJobId = activeJob?.id;
 
     useEffect(() => {
-        if (!activeJob) return;
-        const timer = window.setInterval(() => onPoll(activeJob.id), 1000);
+        if (!activeJobId) return;
+        onPoll(activeJobId);
+        const timer = window.setInterval(() => onPoll(activeJobId), 250);
         return () => window.clearInterval(timer);
-    }, [activeJob, onPoll]);
+    }, [activeJobId, onPoll]);
 
     const close = () => {
         if (activeJob) onCancel(activeJob.id);
@@ -80,8 +82,16 @@ export default function SubtitleGenerationProgressDialog({ open, generation, onP
                             variant={activeJob.progress !== undefined ? 'determinate' : 'indeterminate'}
                             value={activeJob.progress}
                         />
-                        {activeJob.remainingSeconds !== undefined && activeJob.remainingSeconds > 0 && (
+                        {activeJob.completedFrames !== undefined && activeJob.totalFrames !== undefined && (
                             <Typography aria-live="polite" variant="caption" sx={{ display: 'block', mt: 1 }}>
+                                {t('extension.subtitleGeneration.frameProgress', {
+                                    current: activeJob.completedFrames.toLocaleString(),
+                                    total: activeJob.totalFrames.toLocaleString(),
+                                })}
+                            </Typography>
+                        )}
+                        {activeJob.remainingSeconds !== undefined && activeJob.remainingSeconds > 0 && (
+                            <Typography aria-live="polite" variant="caption" sx={{ display: 'block' }}>
                                 {t('extension.subtitleGeneration.timeRemaining', {
                                     time: formatRemainingTime(activeJob.remainingSeconds),
                                 })}

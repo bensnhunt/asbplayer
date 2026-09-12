@@ -280,6 +280,7 @@
             "connecting": "Verbindung mit dem lokalen Whisper-Dienst wird hergestellt…",
             "downloading": "Audio wird heruntergeladen ({{progress}}%)",
             "transcribing": "Audio wird mit Whisper transkribiert…",
+            "frameProgress": "{{current}} / {{total}} Frames",
             "timeRemaining": "Noch etwa {{time}}",
             "queued": "Warten auf den lokalen Whisper-Dienst…",
             "completed": "Die erstellten Untertitel sind im Auswahlmenü bereit.",

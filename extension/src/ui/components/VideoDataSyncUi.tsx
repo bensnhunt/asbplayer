@@ -383,6 +383,10 @@ export default function VideoDataSyncUi({ bridge }: Props) {
         (jobId: string) => sendSubtitleGeneration({ operation: 'cancel', jobId }),
         [sendSubtitleGeneration]
     );
+    const handlePollSubtitleGeneration = useCallback(
+        (jobId: string) => sendSubtitleGeneration({ operation: 'status', jobId }),
+        [sendSubtitleGeneration]
+    );
 
     return (
         <StyledEngineProvider injectFirst>
@@ -429,7 +433,7 @@ export default function VideoDataSyncUi({ bridge }: Props) {
                 <SubtitleGenerationProgressDialog
                     open={subtitleTrackSelectorOpen && subtitleGenerationProgressOpen}
                     generation={subtitleGeneration}
-                    onPoll={(jobId) => sendSubtitleGeneration({ operation: 'status', jobId })}
+                    onPoll={handlePollSubtitleGeneration}
                     onCancel={handleCancelSubtitleGeneration}
                     onClose={() => setSubtitleGenerationProgressOpen(false)}
                 />

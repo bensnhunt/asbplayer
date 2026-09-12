@@ -280,6 +280,7 @@
             "connecting": "Yhdistetään paikalliseen Whisper-palveluun…",
             "downloading": "Ääntä ladataan ({{progress}}%)",
             "transcribing": "Ääntä litteroidaan Whisperillä…",
+            "frameProgress": "{{current}} / {{total}} kehystä",
             "timeRemaining": "Noin {{time}} jäljellä",
             "queued": "Odotetaan paikallista Whisper-palvelua…",
             "completed": "Luodut tekstitykset ovat valittavissa.",

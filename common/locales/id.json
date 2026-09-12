@@ -280,6 +280,7 @@
             "connecting": "Menghubungkan ke layanan Whisper lokal…",
             "downloading": "Mengunduh audio ({{progress}}%)",
             "transcribing": "Mentranskripsikan audio dengan Whisper…",
+            "frameProgress": "{{current}} / {{total}} frame",
             "timeRemaining": "Sekitar {{time}} tersisa",
             "queued": "Menunggu layanan Whisper lokal…",
             "completed": "Subtitle yang dibuat siap di pemilih.",

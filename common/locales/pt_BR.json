@@ -280,6 +280,7 @@
             "connecting": "Conectando ao serviço Whisper local…",
             "downloading": "Baixando áudio ({{progress}}%)",
             "transcribing": "Transcrevendo áudio com o Whisper…",
+            "frameProgress": "{{current}} / {{total}} quadros",
             "timeRemaining": "Cerca de {{time}} restantes",
             "queued": "Aguardando o serviço Whisper local…",
             "completed": "As legendas geradas estão prontas no seletor.",

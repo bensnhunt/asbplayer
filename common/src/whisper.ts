@@ -40,6 +40,10 @@ export interface SubtitleGenerationJob {
     readonly id: string;
     readonly state: SubtitleGenerationJobState;
     readonly progress?: number;
+    /** Native Whisper tqdm frame counter. */
+    readonly completedFrames?: number;
+    /** Native Whisper tqdm frame counter total. */
+    readonly totalFrames?: number;
     readonly remainingSeconds?: number;
     readonly error?: string;
     readonly entry?: GeneratedSubtitleCacheEntry;
