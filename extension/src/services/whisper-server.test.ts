@@ -48,3 +48,11 @@ it('turns service errors into selector-safe messages', async () => {
         error: 'Unsupported source',
     });
 });
+
+it('explains how to recover when the local service is unavailable', async () => {
+    fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+
+    await expect(requestWhisperServer({ command: 'subtitle-generation', operation: 'capabilities' })).resolves.toEqual({
+        error: 'Cannot reach the local Whisper service at 127.0.0.1:8767. Install and start asbplayer-whisper-server, then try again.',
+    });
+});

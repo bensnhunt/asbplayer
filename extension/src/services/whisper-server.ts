@@ -2,9 +2,15 @@ import type { SubtitleGenerationMessage, SubtitleGenerationResponse } from '@pro
 
 export const whisperServerUrl = 'http://127.0.0.1:8767';
 
-const responseError = (error: unknown): SubtitleGenerationResponse => ({
-    error: error instanceof Error ? error.message : String(error),
-});
+const responseError = (error: unknown): SubtitleGenerationResponse => {
+    if (error instanceof TypeError && /failed to fetch/i.test(error.message)) {
+        return {
+            error: 'Cannot reach the local Whisper service at 127.0.0.1:8767. Install and start asbplayer-whisper-server, then try again.',
+        };
+    }
+
+    return { error: error instanceof Error ? error.message : String(error) };
+};
 
 const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
     const bytes = new Uint8Array(buffer);
