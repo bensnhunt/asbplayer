@@ -264,6 +264,7 @@
             "failedToAutoLoad": "Tekstityksiä ei voitu automaattisesti ladata haluamasi kielellä.",
             "rememberTrackPreference": "Muista nämä kappaleen valinnat tällä sivustolla",
             "selectSubtitles": "Valitse tekstitys",
+            "generateSubtitles": "Luo tekstitykset",
             "subtitleTrack": "Tekstitysraita",
             "videoName": "Videonnimi",
             "genericPage": "Use generic subtitle detection for this site",
@@ -271,6 +272,19 @@
             "genericPageInfo": "This page does not have a dedicated subtitle detection parser. Enable generic subtitle detection then refresh the page to possibly detect subtitles.",
             "genericPageWarning": "This site is using generic subtitle detection. Some subtitle tracks may be missing, mislabeled, incorrect, or inconsistently present between page loads. Additionally, a subtitle may need to be first selected on the site and shown on the video to be usable.",
             "ftue": "Automaattisesti havaitut tekstitysraidat voidaan valita täällä. asbplayer ei osaa havaita tekstityksiä jokaisella sivustolla. Voit aina ladata omia tekstitystiedostoja."
+        },
+        "subtitleGeneration": {
+            "title": "Luo tekstitykset",
+            "description": "Paikallinen Whisper-palvelu lataa äänen tältä sivulta. DRM-suojattuja ja tukemattomia suoratoistopalveluja ei voida käsitellä.",
+            "videoUrl": "Videon URL-osoite",
+            "connecting": "Yhdistetään paikalliseen Whisper-palveluun…",
+            "downloading": "Ääntä ladataan ({{progress}}%)",
+            "transcribing": "Ääntä litteroidaan Whisperillä…",
+            "queued": "Odotetaan paikallista Whisper-palvelua…",
+            "completed": "Luodut tekstitykset ovat valittavissa.",
+            "cancel": "Lopeta luonti",
+            "generate": "Luo",
+            "close": "Sulje"
         },
         "videoSelect": {
             "multipleVideoElements": "Useita video-elementtejä havaittu",

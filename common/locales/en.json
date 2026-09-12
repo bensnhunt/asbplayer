@@ -264,6 +264,7 @@
             "failedToAutoLoad": "Could not auto-load subtitles in your preferred language.",
             "rememberTrackPreference": "Remember these track choices for this site",
             "selectSubtitles": "Select Subtitles",
+            "generateSubtitles": "Generate Subtitles",
             "subtitleTrack": "Subtitle Track",
             "videoName": "Video Name",
             "genericPage": "Use generic subtitle detection for this site",
@@ -271,6 +272,19 @@
             "genericPageInfo": "This page does not have a dedicated subtitle detection parser. Enable generic subtitle detection then refresh the page to possibly detect subtitles.",
             "genericPageWarning": "This site is using generic subtitle detection. Some subtitle tracks may be missing, mislabeled, incorrect, or inconsistently present between page loads. Additionally, a subtitle may need to be first selected on the site and shown on the video to be usable.",
             "ftue": "Auto-detected subtitle tracks can be selected here. asbplayer does not know how to detect subtitles on every site. You can always load your own subtitle files."
+        },
+        "subtitleGeneration": {
+            "title": "Generate Subtitles",
+            "description": "Audio is downloaded from this page by your local Whisper service. DRM-protected and unsupported streaming services cannot be processed.",
+            "videoUrl": "Video URL",
+            "connecting": "Connecting to the local Whisper service…",
+            "downloading": "Downloading audio ({{progress}}%)",
+            "transcribing": "Transcribing audio with Whisper…",
+            "queued": "Waiting for the local Whisper service…",
+            "completed": "Generated subtitles are ready in the selector.",
+            "cancel": "Cancel generation",
+            "generate": "Generate",
+            "close": "Close"
         },
         "videoSelect": {
             "multipleVideoElements": "Multiple Video Elements Detected",

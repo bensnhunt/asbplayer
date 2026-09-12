@@ -264,6 +264,7 @@
             "failedToAutoLoad": "선호하는 언어의 자막을 자동으로 불러올 수 없습니다.",
             "rememberTrackPreference": "이 사이트에 대한 트랙 선택을 기억하기",
             "selectSubtitles": "자막 선택",
+            "generateSubtitles": "자막 생성",
             "subtitleTrack": "자막 트랙",
             "videoName": "영상 이름",
             "genericPage": "Use generic subtitle detection for this site",
@@ -271,6 +272,19 @@
             "genericPageInfo": "This page does not have a dedicated subtitle detection parser. Enable generic subtitle detection then refresh the page to possibly detect subtitles.",
             "genericPageWarning": "This site is using generic subtitle detection. Some subtitle tracks may be missing, mislabeled, incorrect, or inconsistently present between page loads. Additionally, a subtitle may need to be first selected on the site and shown on the video to be usable.",
             "ftue": "자동으로 감지된 자막 트랙은 여기에서 선택할 수 있습니다.\nasbplayer가 모든 사이트에서 자막을 감지할 수 있는 것은 아닙니다.\n언제든지 직접 자막 파일을 불러올 수 있습니다."
+        },
+        "subtitleGeneration": {
+            "title": "자막 생성",
+            "description": "이 페이지의 오디오는 로컬 Whisper 서비스가 다운로드합니다. DRM으로 보호되었거나 지원되지 않는 스트리밍 서비스는 처리할 수 없습니다.",
+            "videoUrl": "동영상 URL",
+            "connecting": "로컬 Whisper 서비스에 연결하는 중…",
+            "downloading": "오디오 다운로드 중 ({{progress}}%)",
+            "transcribing": "Whisper로 오디오를 받아쓰는 중…",
+            "queued": "로컬 Whisper 서비스를 기다리는 중…",
+            "completed": "생성된 자막을 선택기에서 사용할 수 있습니다.",
+            "cancel": "생성 취소",
+            "generate": "생성",
+            "close": "닫기"
         },
         "videoSelect": {
             "multipleVideoElements": "다수의 영상 요소가 감지되었습니다.",

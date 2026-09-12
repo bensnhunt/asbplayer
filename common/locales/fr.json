@@ -264,6 +264,7 @@
             "failedToAutoLoad": "Impossible de charger automatiquement les sous-titres dans la langue préférée.",
             "rememberTrackPreference": "Se souvenir de ces choix de piste pour ce site",
             "selectSubtitles": "Sélectionner des sous-titres",
+            "generateSubtitles": "Générer des sous-titres",
             "subtitleTrack": "Piste de sous-titre",
             "videoName": "Nom de la vidéo",
             "genericPage": "Use generic subtitle detection for this site",
@@ -271,6 +272,19 @@
             "genericPageInfo": "This page does not have a dedicated subtitle detection parser. Enable generic subtitle detection then refresh the page to possibly detect subtitles.",
             "genericPageWarning": "This site is using generic subtitle detection. Some subtitle tracks may be missing, mislabeled, incorrect, or inconsistently present between page loads. Additionally, a subtitle may need to be first selected on the site and shown on the video to be usable.",
             "ftue": "Auto-detected subtitle tracks can be selected here. asbplayer does not know how to detect subtitles on every site. You can always load your own subtitle files."
+        },
+        "subtitleGeneration": {
+            "title": "Générer des sous-titres",
+            "description": "Le service Whisper local télécharge l’audio depuis cette page. Les services de streaming protégés par DRM ou non pris en charge ne peuvent pas être traités.",
+            "videoUrl": "URL de la vidéo",
+            "connecting": "Connexion au service Whisper local…",
+            "downloading": "Téléchargement de l’audio ({{progress}}%)",
+            "transcribing": "Transcription de l’audio avec Whisper…",
+            "queued": "En attente du service Whisper local…",
+            "completed": "Les sous-titres générés sont prêts dans le sélecteur.",
+            "cancel": "Annuler la génération",
+            "generate": "Générer",
+            "close": "Fermer"
         },
         "videoSelect": {
             "multipleVideoElements": "Plusieurs éléments vidéo détectés",

@@ -264,6 +264,7 @@
             "failedToAutoLoad": "Tidak dapat memuat takarir secara otomatis dalam bahasa pilihan Anda.",
             "rememberTrackPreference": "Ingat pilihan trek ini untuk situs ini",
             "selectSubtitles": "Pilih Takarir",
+            "generateSubtitles": "Buat Takarir",
             "subtitleTrack": "Trek Takarir",
             "videoName": "Nama Video",
             "genericPage": "Use generic subtitle detection for this site",
@@ -271,6 +272,19 @@
             "genericPageInfo": "This page does not have a dedicated subtitle detection parser. Enable generic subtitle detection then refresh the page to possibly detect subtitles.",
             "genericPageWarning": "This site is using generic subtitle detection. Some subtitle tracks may be missing, mislabeled, incorrect, or inconsistently present between page loads. Additionally, a subtitle may need to be first selected on the site and shown on the video to be usable.",
             "ftue": "Trek takarir yang terdeteksi otomatis dapat dipilih di sini. asbplayer tidak dapat mendeteksi takarir di semua situs. Anda selalu dapat memuat berkas takarir sendiri."
+        },
+        "subtitleGeneration": {
+            "title": "Buat subtitle",
+            "description": "Audio dari halaman ini diunduh oleh layanan Whisper lokal. Layanan streaming yang dilindungi DRM dan tidak didukung tidak dapat diproses.",
+            "videoUrl": "URL video",
+            "connecting": "Menghubungkan ke layanan Whisper lokal…",
+            "downloading": "Mengunduh audio ({{progress}}%)",
+            "transcribing": "Mentranskripsikan audio dengan Whisper…",
+            "queued": "Menunggu layanan Whisper lokal…",
+            "completed": "Subtitle yang dibuat siap di pemilih.",
+            "cancel": "Batalkan pembuatan",
+            "generate": "Buat",
+            "close": "Tutup"
         },
         "videoSelect": {
             "multipleVideoElements": "Beberapa elemen video terdeteksi",

@@ -171,6 +171,8 @@ interface Props {
     onOnlineSourceConfigChanged: (state: Partial<OnlineSubtitleSourceConfig>) => void;
     onDismissFtue: () => void;
     onGenericSubtitleParserChange?: (parse: GenericParseType) => void;
+    canGenerateSubtitles?: boolean;
+    onGenerateSubtitles?: () => void;
     onOpenFiles: (files: FileWithId[]) => void;
     onSubtitleTracks: (tracks: VideoDataSubtitleTrack[]) => void;
     onSelectedSubtitleTrackIds: (trackIds: string[]) => void;
@@ -203,6 +205,8 @@ export default function VideoDataSyncDialog({
     onOnlineSourceConfigChanged,
     onDismissFtue,
     onGenericSubtitleParserChange,
+    canGenerateSubtitles,
+    onGenerateSubtitles,
     onOpenFiles,
     onSubtitleTracks,
     onSelectedSubtitleTrackIds,
@@ -597,6 +601,11 @@ export default function VideoDataSyncDialog({
                     </form>
                 </DialogContent>
                 <DialogActions>
+                    {canGenerateSubtitles && onGenerateSubtitles && (
+                        <Button disabled={disabled} onClick={onGenerateSubtitles}>
+                            {t('extension.videoDataSync.generateSubtitles')}
+                        </Button>
+                    )}
                     <Button disabled={disabled} onClick={() => handleOpenFile()}>
                         {t('action.openFiles')}
                     </Button>

@@ -264,6 +264,7 @@
             "failedToAutoLoad": "Не удалось автоматически загрузить субтитры на вашем языке.",
             "rememberTrackPreference": "Запомнить мой выбор дорожек для этого сайта",
             "selectSubtitles": "Выбрать субтитры",
+            "generateSubtitles": "Создать субтитры",
             "subtitleTrack": "Выбрать дорожку субтитров",
             "videoName": "Название видео",
             "genericPage": "Use generic subtitle detection for this site",
@@ -271,6 +272,19 @@
             "genericPageInfo": "This page does not have a dedicated subtitle detection parser. Enable generic subtitle detection then refresh the page to possibly detect subtitles.",
             "genericPageWarning": "This site is using generic subtitle detection. Some subtitle tracks may be missing, mislabeled, incorrect, or inconsistently present between page loads. Additionally, a subtitle may need to be first selected on the site and shown on the video to be usable.",
             "ftue": "Здесь можно выбрать дорожки субтитров найденные автоматически. Автоматическая загрузка субтитров не работает на каждом сайте - вы всегда можете загрузить свои собственные файлы с субтитрами."
+        },
+        "subtitleGeneration": {
+            "title": "Создать субтитры",
+            "description": "Аудио с этой страницы загружается локальной службой Whisper. Потоковые сервисы, защищённые DRM, и неподдерживаемые сервисы нельзя обработать.",
+            "videoUrl": "URL видео",
+            "connecting": "Подключение к локальной службе Whisper…",
+            "downloading": "Загрузка аудио ({{progress}}%)",
+            "transcribing": "Расшифровка аудио с помощью Whisper…",
+            "queued": "Ожидание локальной службы Whisper…",
+            "completed": "Созданные субтитры доступны в селекторе.",
+            "cancel": "Отменить создание",
+            "generate": "Создать",
+            "close": "Закрыть"
         },
         "videoSelect": {
             "multipleVideoElements": "Обнаружено несколько видеоэлементов",

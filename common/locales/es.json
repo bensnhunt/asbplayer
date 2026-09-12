@@ -264,6 +264,7 @@
             "failedToAutoLoad": "No se pudo cargar los subtítulos automáticamente en su idioma preferido",
             "rememberTrackPreference": "Recordar estas opciones de pista para este sitio",
             "selectSubtitles": "Seleccionar Subtítulos",
+            "generateSubtitles": "Generar subtítulos",
             "subtitleTrack": "Pista de Subtítulos",
             "videoName": "Nombre de Video",
             "genericPage": "Use generic subtitle detection for this site",
@@ -271,6 +272,19 @@
             "genericPageInfo": "This page does not have a dedicated subtitle detection parser. Enable generic subtitle detection then refresh the page to possibly detect subtitles.",
             "genericPageWarning": "This site is using generic subtitle detection. Some subtitle tracks may be missing, mislabeled, incorrect, or inconsistently present between page loads. Additionally, a subtitle may need to be first selected on the site and shown on the video to be usable.",
             "ftue": "Las pistas de subtítulos autodetectadas pueden ser seleccionadas aquí. asbplayer no sabe cómo detectar subtítulos en cada sitio. Se puede cargar sus propios subtítulos."
+        },
+        "subtitleGeneration": {
+            "title": "Generar subtítulos",
+            "description": "El servicio Whisper local descarga el audio de esta página. Los servicios de streaming no compatibles o protegidos por DRM no se pueden procesar.",
+            "videoUrl": "URL del vídeo",
+            "connecting": "Conectando al servicio Whisper local…",
+            "downloading": "Descargando audio ({{progress}}%)",
+            "transcribing": "Transcribiendo audio con Whisper…",
+            "queued": "Esperando al servicio Whisper local…",
+            "completed": "Los subtítulos generados están listos en el selector.",
+            "cancel": "Cancelar generación",
+            "generate": "Generar",
+            "close": "Cerrar"
         },
         "videoSelect": {
             "multipleVideoElements": "Múltiples Elementos de Video Detectados",

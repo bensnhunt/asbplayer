@@ -1,0 +1,509 @@
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Literal
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+from fastapi import FastAPI, HTTPException, Response
+from pydantic import BaseModel, Field
+
+
+DEFAULT_CACHE_ROOT = Path(os.environ.get("ASBPLAYER_WHISPER_CACHE_DIR", Path.home() / ".cache/asbplayer/whisper"))
+
+
+@dataclass(frozen=True)
+class OptionSpec:
+    name: str
+    label: str
+    group: str
+    kind: Literal["string", "number", "boolean"]
+    default: str | float | int | bool | None
+    affects_output: bool
+    description: str | None = None
+    choices: tuple[str | int | float, ...] | None = None
+
+    def public(self) -> dict[str, Any]:
+        result = {
+            "name": self.name,
+            "label": self.label,
+            "group": self.group,
+            "type": self.kind,
+            "defaultValue": self.default,
+            "affectsOutput": self.affects_output,
+        }
+        if self.description:
+            result["description"] = self.description
+        if self.choices:
+            result["choices"] = list(self.choices)
+        return result
+
+
+# This mirrors the public flags in the pinned openai-whisper CLI. The source
+# audio and output directory/format are intentionally service-owned.
+OPTION_SPECS = (
+    OptionSpec(
+        "model",
+        "Model",
+        "Model",
+        "string",
+        "small",
+        True,
+        choices=(
+            "tiny.en",
+            "tiny",
+            "base.en",
+            "base",
+            "small.en",
+            "small",
+            "medium.en",
+            "medium",
+            "large-v1",
+            "large-v2",
+            "large-v3",
+            "large",
+            "large-v3-turbo",
+            "turbo",
+        ),
+    ),
+    OptionSpec("model_dir", "Model directory", "Runtime", "string", None, False),
+    OptionSpec("device", "Device", "Runtime", "string", "cpu", False),
+    OptionSpec("verbose", "Verbose logging", "Runtime", "boolean", True, False),
+    OptionSpec("task", "Task", "Transcription", "string", "transcribe", True, choices=("transcribe", "translate")),
+    OptionSpec("language", "Source language", "Transcription", "string", None, True, "Leave blank for auto-detection."),
+    OptionSpec("temperature", "Temperature", "Decoding", "number", 0, True),
+    OptionSpec("best_of", "Best of", "Decoding", "number", 5, True),
+    OptionSpec("beam_size", "Beam size", "Decoding", "number", 5, True),
+    OptionSpec("patience", "Patience", "Decoding", "number", None, True),
+    OptionSpec("length_penalty", "Length penalty", "Decoding", "number", None, True),
+    OptionSpec("suppress_tokens", "Suppress tokens", "Decoding", "string", "-1", True),
+    OptionSpec("initial_prompt", "Initial prompt", "Transcription", "string", None, True),
+    OptionSpec("carry_initial_prompt", "Carry initial prompt", "Transcription", "boolean", False, True),
+    OptionSpec("condition_on_previous_text", "Condition on previous text", "Transcription", "boolean", True, True),
+    OptionSpec("fp16", "Use FP16", "Runtime", "boolean", True, False),
+    OptionSpec("temperature_increment_on_fallback", "Fallback temperature increment", "Decoding", "number", 0.2, True),
+    OptionSpec("compression_ratio_threshold", "Compression ratio threshold", "Decoding", "number", 2.4, True),
+    OptionSpec("logprob_threshold", "Log probability threshold", "Decoding", "number", -1.0, True),
+    OptionSpec("no_speech_threshold", "No-speech threshold", "Decoding", "number", 0.6, True),
+    OptionSpec("word_timestamps", "Word timestamps", "Timestamps", "boolean", False, True),
+    OptionSpec("prepend_punctuations", "Prepend punctuations", "Timestamps", "string", "\"'“¿([{-", True),
+    OptionSpec("append_punctuations", "Append punctuations", "Timestamps", "string", "\"'.。,，!！?？:：”)]}、", True),
+    OptionSpec("highlight_words", "Highlight words", "Timestamps", "boolean", False, True),
+    OptionSpec("max_line_width", "Maximum line width", "Timestamps", "number", None, True),
+    OptionSpec("max_line_count", "Maximum lines per subtitle", "Timestamps", "number", None, True),
+    OptionSpec("max_words_per_line", "Maximum words per line", "Timestamps", "number", None, True),
+    OptionSpec("threads", "CPU threads", "Runtime", "number", 0, False),
+    OptionSpec("clip_timestamps", "Clip timestamps", "Timestamps", "string", "0", True),
+    OptionSpec("hallucination_silence_threshold", "Hallucination silence threshold", "Decoding", "number", None, True),
+)
+SPECS_BY_NAME = {spec.name: spec for spec in OPTION_SPECS}
+
+
+class CreateJobRequest(BaseModel):
+    sourceUrl: str = Field(min_length=1)
+    whisperOptions: dict[str, Any] = Field(default_factory=dict)
+
+
+@dataclass
+class Job:
+    id: str
+    source_url: str
+    source_identity: dict[str, str]
+    source_key: str
+    cache_id: str
+    options: dict[str, Any]
+    state: str = "queued"
+    progress: int | None = None
+    error: str | None = None
+    entry: dict[str, Any] | None = None
+    cancel_requested: threading.Event = field(default_factory=threading.Event)
+    process: subprocess.Popen[bytes] | None = None
+
+    def public(self) -> dict[str, Any]:
+        result: dict[str, Any] = {"id": self.id, "state": self.state}
+        if self.progress is not None:
+            result["progress"] = self.progress
+        if self.error:
+            result["error"] = self.error
+        if self.entry:
+            result["entry"] = self.entry
+        return result
+
+
+def normalize_url(value: str) -> str:
+    parsed = urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("sourceUrl must be an HTTP(S) URL")
+    query = urlencode(sorted(parse_qsl(parsed.query, keep_blank_values=True)))
+    return urlunsplit((parsed.scheme, parsed.netloc.lower(), parsed.path, query, ""))
+
+
+def validate_options(raw: dict[str, Any]) -> dict[str, Any]:
+    unknown = sorted(set(raw) - set(SPECS_BY_NAME))
+    if unknown:
+        raise ValueError(f"Unsupported Whisper option: {unknown[0]}")
+
+    normalized: dict[str, Any] = {}
+    for spec in OPTION_SPECS:
+        value = raw.get(spec.name, spec.default)
+        if value is None:
+            normalized[spec.name] = None
+            continue
+        if spec.kind == "boolean":
+            if not isinstance(value, bool):
+                raise ValueError(f"{spec.name} must be true or false")
+        elif spec.kind == "number":
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"{spec.name} must be a number")
+        elif not isinstance(value, str):
+            raise ValueError(f"{spec.name} must be text")
+        if spec.choices and value not in spec.choices:
+            raise ValueError(f"{spec.name} must be one of: {', '.join(map(str, spec.choices))}")
+        normalized[spec.name] = value
+    return normalized
+
+
+def source_key(identity: dict[str, str]) -> str:
+    return hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def cache_key(identity: dict[str, str], options: dict[str, Any]) -> str:
+    cache_options = {spec.name: options[spec.name] for spec in OPTION_SPECS if spec.affects_output}
+    value = json.dumps({"source": identity, "options": cache_options}, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def resolve_source_identity(source_url: str) -> dict[str, str]:
+    normalized = normalize_url(source_url)
+    try:
+        import yt_dlp
+
+        with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "noplaylist": True}) as downloader:
+            info = downloader.extract_info(source_url, download=False)
+        return {
+            "extractor": str(info.get("extractor_key") or info.get("extractor") or "url"),
+            "id": str(info.get("id") or normalized),
+            "url": normalized,
+        }
+    except Exception as error:
+        # Cache lookup remains useful during temporary extractor/network failures.
+        return {"extractor": "url", "id": normalized, "url": normalized}
+
+
+class JobManager:
+    def __init__(self, cache_root: Path = DEFAULT_CACHE_ROOT):
+        self.cache_root = cache_root
+        self.entries_root = cache_root / "entries"
+        self.jobs: dict[str, Job] = {}
+        self.queue: asyncio.Queue[Job] = asyncio.Queue()
+        self.worker: asyncio.Task[None] | None = None
+        self.lock = threading.Lock()
+
+    async def start(self) -> None:
+        self.entries_root.mkdir(parents=True, exist_ok=True)
+        self.worker = asyncio.create_task(self._work())
+
+    async def stop(self) -> None:
+        if self.worker:
+            self.worker.cancel()
+            await asyncio.gather(self.worker, return_exceptions=True)
+
+    def entry_path(self, entry_id: str) -> Path:
+        return self.entries_root / entry_id
+
+    def read_entry(self, entry_id: str) -> dict[str, Any] | None:
+        metadata_path = self.entry_path(entry_id) / "metadata.json"
+        try:
+            return json.loads(metadata_path.read_text())
+        except (FileNotFoundError, json.JSONDecodeError):
+            return None
+
+    @staticmethod
+    def public_entry(metadata: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": metadata["id"],
+            "label": metadata["label"],
+            "fileName": metadata["fileName"],
+            "createdAt": metadata["createdAt"],
+            "sourceKey": metadata["sourceKey"],
+        }
+
+    async def create(self, request: CreateJobRequest) -> Job:
+        try:
+            options = validate_options(request.whisperOptions)
+            identity = await asyncio.to_thread(resolve_source_identity, request.sourceUrl)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+        entry_id = cache_key(identity, options)
+        metadata = self.read_entry(entry_id)
+        if metadata:
+            return Job(
+                id=f"cache-{entry_id[:12]}",
+                source_url=request.sourceUrl,
+                source_identity=identity,
+                source_key=source_key(identity),
+                cache_id=entry_id,
+                options=options,
+                state="completed",
+                entry=self.public_entry(metadata),
+            )
+
+        for job in self.jobs.values():
+            if job.cache_id == entry_id and job.state in {"queued", "downloading", "transcribing"}:
+                return job
+
+        job = Job(
+            id=uuid.uuid4().hex,
+            source_url=request.sourceUrl,
+            source_identity=identity,
+            source_key=source_key(identity),
+            cache_id=entry_id,
+            options=options,
+        )
+        self.jobs[job.id] = job
+        await self.queue.put(job)
+        return job
+
+    async def _work(self) -> None:
+        while True:
+            job = await self.queue.get()
+            try:
+                if job.cancel_requested.is_set():
+                    job.state = "cancelled"
+                else:
+                    await asyncio.to_thread(self._run, job)
+            finally:
+                self.queue.task_done()
+
+    def _run(self, job: Job) -> None:
+        try:
+            with tempfile.TemporaryDirectory(prefix="asbplayer-whisper-") as temporary_directory:
+                temporary_path = Path(temporary_directory)
+                audio_file = self._download_audio(job, temporary_path)
+                if job.cancel_requested.is_set():
+                    job.state = "cancelled"
+                    return
+                self._transcribe(job, audio_file, temporary_path)
+                if job.cancel_requested.is_set():
+                    job.state = "cancelled"
+                    return
+                subtitle_file = next(temporary_path.glob("output/**/*.srt"), None)
+                if subtitle_file is None:
+                    raise RuntimeError("Whisper completed without producing an SRT file")
+                job.entry = self._store_entry(job, subtitle_file)
+                job.state = "completed"
+        except Exception as error:
+            job.state = "cancelled" if job.cancel_requested.is_set() else "failed"
+            if job.state == "failed":
+                job.error = str(error)
+        finally:
+            job.process = None
+
+    def _download_audio(self, job: Job, temporary_path: Path) -> Path:
+        import yt_dlp
+
+        job.state = "downloading"
+
+        def progress_hook(progress: dict[str, Any]) -> None:
+            if job.cancel_requested.is_set():
+                raise RuntimeError("Download cancelled")
+            if progress.get("status") == "downloading":
+                total = progress.get("total_bytes") or progress.get("total_bytes_estimate")
+                downloaded = progress.get("downloaded_bytes", 0)
+                if total:
+                    job.progress = max(0, min(100, round(downloaded / total * 100)))
+
+        options = {
+            "format": "bestaudio/best",
+            "noplaylist": True,
+            "outtmpl": str(temporary_path / "audio.%(ext)s"),
+            "quiet": True,
+            "no_warnings": True,
+            "progress_hooks": [progress_hook],
+        }
+        with yt_dlp.YoutubeDL(options) as downloader:
+            info = downloader.extract_info(job.source_url, download=True)
+            requested = info.get("requested_downloads") or []
+            if requested and requested[0].get("filepath"):
+                return Path(requested[0]["filepath"])
+            expected = Path(downloader.prepare_filename(info))
+        if expected.exists():
+            return expected
+        audio_files = [path for path in temporary_path.glob("audio.*") if path.is_file()]
+        if not audio_files:
+            raise RuntimeError("yt-dlp did not download an audio file")
+        return audio_files[0]
+
+    def _transcribe(self, job: Job, audio_file: Path, temporary_path: Path) -> None:
+        job.state = "transcribing"
+        output_directory = temporary_path / "output"
+        output_directory.mkdir()
+        executable = shutil.which("whisper")
+        if executable is None:
+            raise RuntimeError("The Whisper CLI is not installed. Reinstall the local Whisper service.")
+        command = [
+            executable,
+            str(audio_file),
+            "--output_dir",
+            str(output_directory),
+            "--output_format",
+            "srt",
+        ]
+        for spec in OPTION_SPECS:
+            value = job.options[spec.name]
+            if value is None:
+                continue
+            command.extend([f"--{spec.name}", str(value)])
+        job.process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        while job.process.poll() is None:
+            if job.cancel_requested.wait(0.25):
+                job.process.terminate()
+                try:
+                    job.process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    job.process.kill()
+                return
+        if job.process.returncode != 0:
+            error_output = (job.process.stderr.read() if job.process.stderr else b"").decode(errors="replace").strip()
+            raise RuntimeError(error_output or f"Whisper exited with code {job.process.returncode}")
+
+    def _store_entry(self, job: Job, subtitle_file: Path) -> dict[str, Any]:
+        created_at = datetime.now(timezone.utc).isoformat()
+        language = job.options["language"] or "auto"
+        label = f"Generated subtitles — {job.options['model']} ({language}, {job.options['task']})"
+        file_name = "generated-subtitles.srt"
+        metadata = {
+            "id": job.cache_id,
+            "label": label,
+            "fileName": file_name,
+            "createdAt": created_at,
+            "sourceKey": job.source_key,
+            "sourceIdentity": job.source_identity,
+            "sourceUrl": normalize_url(job.source_url),
+            "whisperOptions": job.options,
+        }
+        destination = self.entry_path(job.cache_id)
+        temporary_destination = self.entries_root / f".{job.cache_id}-{uuid.uuid4().hex}"
+        temporary_destination.mkdir(parents=True)
+        shutil.copyfile(subtitle_file, temporary_destination / "subtitles.srt")
+        (temporary_destination / "metadata.json").write_text(json.dumps(metadata, indent=2, sort_keys=True))
+        if not destination.exists():
+            os.replace(temporary_destination, destination)
+        else:
+            shutil.rmtree(temporary_destination)
+        return self.public_entry(self.read_entry(job.cache_id) or metadata)
+
+    async def cached(self, source_url: str) -> list[dict[str, Any]]:
+        try:
+            identity = await asyncio.to_thread(resolve_source_identity, source_url)
+            wanted_key = source_key(identity)
+            normalized_url = normalize_url(source_url)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        entries: list[dict[str, Any]] = []
+        for metadata_path in self.entries_root.glob("*/metadata.json"):
+            try:
+                metadata = json.loads(metadata_path.read_text())
+            except json.JSONDecodeError:
+                continue
+            if metadata.get("sourceKey") == wanted_key or metadata.get("sourceUrl") == normalized_url:
+                entries.append(self.public_entry(metadata))
+        return sorted(entries, key=lambda entry: entry["createdAt"], reverse=True)
+
+    def get(self, job_id: str) -> Job:
+        job = self.jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Subtitle generation job not found")
+        return job
+
+    def cancel(self, job_id: str) -> Job:
+        job = self.get(job_id)
+        job.cancel_requested.set()
+        if job.state == "queued":
+            job.state = "cancelled"
+        return job
+
+
+manager = JobManager()
+app = FastAPI(title="asbplayer Whisper Server", version="1")
+
+
+@app.on_event("startup")
+async def startup() -> None:
+    await manager.start()
+
+
+@app.on_event("shutdown")
+async def shutdown() -> None:
+    await manager.stop()
+
+
+@app.get("/v1/health")
+async def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/v1/capabilities")
+async def capabilities() -> dict[str, Any]:
+    try:
+        import whisper
+
+        whisper_version = getattr(whisper, "__version__", "unknown")
+    except ImportError:
+        whisper_version = "not installed"
+    return {"whisperVersion": whisper_version, "options": [spec.public() for spec in OPTION_SPECS]}
+
+
+@app.post("/v1/jobs")
+async def create_job(request: CreateJobRequest) -> dict[str, Any]:
+    return (await manager.create(request)).public()
+
+
+@app.get("/v1/jobs/{job_id}")
+async def get_job(job_id: str) -> dict[str, Any]:
+    return manager.get(job_id).public()
+
+
+@app.delete("/v1/jobs/{job_id}")
+async def cancel_job(job_id: str) -> dict[str, Any]:
+    return manager.cancel(job_id).public()
+
+
+@app.get("/v1/cache")
+async def get_cached(sourceUrl: str) -> list[dict[str, Any]]:
+    return await manager.cached(sourceUrl)
+
+
+@app.get("/v1/cache/{entry_id}/srt")
+async def get_srt(entry_id: str) -> Response:
+    metadata = manager.read_entry(entry_id)
+    subtitle_file = manager.entry_path(entry_id) / "subtitles.srt"
+    if not metadata or not subtitle_file.is_file():
+        raise HTTPException(status_code=404, detail="Generated subtitle cache entry not found")
+    return Response(
+        subtitle_file.read_bytes(),
+        media_type="application/x-subrip",
+        headers={"Content-Disposition": f'attachment; filename="{metadata["fileName"]}"'},
+    )
+
+
+def main() -> None:
+    import uvicorn
+
+    uvicorn.run(app, host="127.0.0.1", port=8767)
+
+
+if __name__ == "__main__":
+    main()

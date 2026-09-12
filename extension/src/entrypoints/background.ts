@@ -79,6 +79,7 @@ import BrowserFeaturesHandler from '@/handlers/asbplayerv2/browser-features-hand
 import OpenStatisticsHandler from '@/handlers/video/open-statistics-handler';
 import StatisticsOverlayForwarderHandler from '@/handlers/statistics-overlay/statistics-overlay-forwarder-handler';
 import OpenStatisticsOverlayHandler from '@/handlers/open-statistics-overlay-handler';
+import SubtitleGenerationHandler from '@/handlers/video/subtitle-generation-handler';
 
 export default defineBackground(() => {
     if (!isFirefoxBuild) {
@@ -186,6 +187,7 @@ export default defineBackground(() => {
         new ToggleSidePanelHandler(tabRegistry),
         new OpenStatisticsHandler(tabRegistry),
         new OpenStatisticsOverlayHandler(tabRegistry),
+        new SubtitleGenerationHandler(),
         new OpenAsbplayerSettingsHandler(),
         new CopyToClipboardHandler(),
         new EncodeMp3Handler(),

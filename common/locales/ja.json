@@ -264,6 +264,7 @@
             "failedToAutoLoad": "ご希望の言語の字幕を自動的にロード出来ませんでした",
             "rememberTrackPreference": "字幕トラックの選択を記憶する",
             "selectSubtitles": "字幕を選択",
+            "generateSubtitles": "字幕を生成",
             "subtitleTrack": "字幕トラック",
             "videoName": "動画ファイル名",
             "genericPage": "Use generic subtitle detection for this site",
@@ -271,6 +272,19 @@
             "genericPageInfo": "This page does not have a dedicated subtitle detection parser. Enable generic subtitle detection then refresh the page to possibly detect subtitles.",
             "genericPageWarning": "This site is using generic subtitle detection. Some subtitle tracks may be missing, mislabeled, incorrect, or inconsistently present between page loads. Additionally, a subtitle may need to be first selected on the site and shown on the video to be usable.",
             "ftue": "自動検出された字幕トラックはここで選択できます。asbplayerはすべてのサイトで字幕トラックを検出できるわけではありません。自分の字幕ファイルはいつでもロードすることができます。"
+        },
+        "subtitleGeneration": {
+            "title": "字幕を生成",
+            "description": "このページの音声はローカルのWhisperサービスによってダウンロードされます。DRMで保護された、または未対応のストリーミングサービスは処理できません。",
+            "videoUrl": "動画のURL",
+            "connecting": "ローカルのWhisperサービスに接続中…",
+            "downloading": "音声をダウンロード中（{{progress}}%）",
+            "transcribing": "Whisperで音声を文字起こし中…",
+            "queued": "ローカルのWhisperサービスを待機中…",
+            "completed": "生成した字幕をセレクターで選択できます。",
+            "cancel": "生成をキャンセル",
+            "generate": "生成",
+            "close": "閉じる"
         },
         "videoSelect": {
             "multipleVideoElements": "複数の動画を探知しました",

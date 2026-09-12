@@ -264,6 +264,7 @@
             "failedToAutoLoad": "无法自动加载首选语言的字幕。",
             "rememberTrackPreference": "在此网站记住轨道偏好",
             "selectSubtitles": "选择字幕",
+            "generateSubtitles": "生成字幕",
             "subtitleTrack": "字幕轨道",
             "videoName": "视频名称",
             "genericPage": "Use generic subtitle detection for this site",
@@ -271,6 +272,19 @@
             "genericPageInfo": "This page does not have a dedicated subtitle detection parser. Enable generic subtitle detection then refresh the page to possibly detect subtitles.",
             "genericPageWarning": "This site is using generic subtitle detection. Some subtitle tracks may be missing, mislabeled, incorrect, or inconsistently present between page loads. Additionally, a subtitle may need to be first selected on the site and shown on the video to be usable.",
             "ftue": "可在此选择自动检测到的字幕轨道。若未能识别，您可随时手动加载字幕文件。"
+        },
+        "subtitleGeneration": {
+            "title": "生成字幕",
+            "description": "本地 Whisper 服务会从此页面下载音频。受 DRM 保护或不受支持的流媒体服务无法处理。",
+            "videoUrl": "视频 URL",
+            "connecting": "正在连接本地 Whisper 服务…",
+            "downloading": "正在下载音频（{{progress}}%）",
+            "transcribing": "正在使用 Whisper 转录音频…",
+            "queued": "正在等待本地 Whisper 服务…",
+            "completed": "生成的字幕已可在选择器中使用。",
+            "cancel": "取消生成",
+            "generate": "生成",
+            "close": "关闭"
         },
         "videoSelect": {
             "multipleVideoElements": "检测到多个视频元素",

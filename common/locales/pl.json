@@ -264,6 +264,7 @@
             "failedToAutoLoad": "Could not auto-load subtitles in your preferred language.",
             "rememberTrackPreference": "Zapamiętaj ustawienia ścieżek dla tej strony",
             "selectSubtitles": "Wybierz napisy",
+            "generateSubtitles": "Generuj napisy",
             "subtitleTrack": "Ścieżka napisów",
             "videoName": "Nazwa wideo",
             "genericPage": "Use generic subtitle detection for this site",
@@ -271,6 +272,19 @@
             "genericPageInfo": "This page does not have a dedicated subtitle detection parser. Enable generic subtitle detection then refresh the page to possibly detect subtitles.",
             "genericPageWarning": "This site is using generic subtitle detection. Some subtitle tracks may be missing, mislabeled, incorrect, or inconsistently present between page loads. Additionally, a subtitle may need to be first selected on the site and shown on the video to be usable.",
             "ftue": "Auto-detected subtitle tracks can be selected here. asbplayer does not know how to detect subtitles on every site. You can always load your own subtitle files."
+        },
+        "subtitleGeneration": {
+            "title": "Generuj napisy",
+            "description": "Dźwięk z tej strony jest pobierany przez lokalną usługę Whisper. Usługi przesyłania strumieniowego chronione przez DRM oraz nieobsługiwane nie mogą zostać przetworzone.",
+            "videoUrl": "Adres URL filmu",
+            "connecting": "Łączenie z lokalną usługą Whisper…",
+            "downloading": "Pobieranie dźwięku ({{progress}}%)",
+            "transcribing": "Transkrypcja dźwięku za pomocą Whisper…",
+            "queued": "Oczekiwanie na lokalną usługę Whisper…",
+            "completed": "Wygenerowane napisy są gotowe w selektorze.",
+            "cancel": "Anuluj generowanie",
+            "generate": "Generuj",
+            "close": "Zamknij"
         },
         "videoSelect": {
             "multipleVideoElements": "Wykryto wiele elementów wideo",

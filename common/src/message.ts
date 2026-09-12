@@ -32,6 +32,12 @@ import type {
 } from '@project/common/src/model';
 import type { AsbPlayerToVideoCommandV2 } from '@project/common/src/command';
 import type {
+    GeneratedSubtitleCacheEntry,
+    SubtitleGenerationJob,
+    WhisperCapabilities,
+    WhisperOptionValue,
+} from '@project/common/whisper';
+import type {
     DictionaryLocalTokenInput,
     DictionaryTokenKey,
     DictionaryTokenRecord,
@@ -566,6 +572,27 @@ export interface VideoDataUiBridgeSetOnlineSubtitleSourceConfigMessage extends M
 export interface VideoDataUiBridgeSetGenericSubtitleParserMessage extends Message {
     readonly command: 'setGenericSubtitleParser';
     readonly parse: GenericParseType;
+}
+
+export type SubtitleGenerationOperation = 'capabilities' | 'start' | 'status' | 'cancel' | 'cached' | 'download';
+
+/** Sent by the streaming subtitle selector to the extension background. */
+export interface SubtitleGenerationMessage extends Message {
+    readonly command: 'subtitle-generation';
+    readonly operation: SubtitleGenerationOperation;
+    readonly sourceUrl?: string;
+    readonly whisperOptions?: Record<string, WhisperOptionValue>;
+    readonly jobId?: string;
+    readonly cacheEntryId?: string;
+}
+
+export interface SubtitleGenerationResponse {
+    readonly error?: string;
+    readonly capabilities?: WhisperCapabilities;
+    readonly job?: SubtitleGenerationJob;
+    readonly entries?: GeneratedSubtitleCacheEntry[];
+    readonly srtBase64?: string;
+    readonly fileName?: string;
 }
 
 export interface CropAndResizeMessage extends Message, ImageCaptureParams {

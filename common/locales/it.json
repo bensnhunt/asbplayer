@@ -264,6 +264,7 @@
             "failedToAutoLoad": "Impossibile caricare automaticamente i sottotitoli nella lingua preferita.",
             "rememberTrackPreference": "Ricorda le scelte di traccia per questo sito",
             "selectSubtitles": "Seleziona sottotitoli",
+            "generateSubtitles": "Genera sottotitoli",
             "subtitleTrack": "Traccia sottotitoli",
             "videoName": "Nome video",
             "genericPage": "Use generic subtitle detection for this site",
@@ -271,6 +272,19 @@
             "genericPageInfo": "This page does not have a dedicated subtitle detection parser. Enable generic subtitle detection then refresh the page to possibly detect subtitles.",
             "genericPageWarning": "This site is using generic subtitle detection. Some subtitle tracks may be missing, mislabeled, incorrect, or inconsistently present between page loads. Additionally, a subtitle may need to be first selected on the site and shown on the video to be usable.",
             "ftue": "Qui è possibile selezionare le tracce dei sottotitoli rilevate automaticamente. asbplayer non sa come rilevare i sottotitoli su tutti i siti. Puoi sempre caricare i tuoi file di sottotitoli."
+        },
+        "subtitleGeneration": {
+            "title": "Genera sottotitoli",
+            "description": "L'audio viene scaricato da questa pagina dal servizio Whisper locale. I servizi di streaming protetti da DRM o non supportati non possono essere elaborati.",
+            "videoUrl": "URL video",
+            "connecting": "Connessione al servizio Whisper locale…",
+            "downloading": "Download dell'audio ({{progress}}%)",
+            "transcribing": "Trascrizione dell'audio con Whisper…",
+            "queued": "In attesa del servizio Whisper locale…",
+            "completed": "I sottotitoli generati sono pronti nel selettore.",
+            "cancel": "Annulla generazione",
+            "generate": "Genera",
+            "close": "Chiudi"
         },
         "videoSelect": {
             "multipleVideoElements": "Rilevati più elementi video",
