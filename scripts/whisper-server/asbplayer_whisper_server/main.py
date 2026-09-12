@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -23,6 +25,9 @@ from pydantic import BaseModel, Field
 
 DEFAULT_CACHE_ROOT = Path(os.environ.get("ASBPLAYER_WHISPER_CACHE_DIR", Path.home() / ".cache/asbplayer/whisper"))
 logger = logging.getLogger("uvicorn.error")
+WHISPER_TIMESTAMP_RANGE = re.compile(
+    r"\[(?P<start>\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*-->\s*(?P<end>\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?)\]"
+)
 
 
 @dataclass(frozen=True)
@@ -130,6 +135,7 @@ class Job:
     error: str | None = None
     entry: dict[str, Any] | None = None
     last_reported_progress: int | None = None
+    duration_seconds: float | None = None
     cancel_requested: threading.Event = field(default_factory=threading.Event)
     process: subprocess.Popen[bytes] | None = None
 
@@ -185,6 +191,22 @@ def cache_key(identity: dict[str, str], options: dict[str, Any]) -> str:
     cache_options = {spec.name: options[spec.name] for spec in OPTION_SPECS if spec.affects_output}
     value = json.dumps({"source": identity, "options": cache_options}, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(value.encode()).hexdigest()
+
+
+def timestamp_seconds(value: str) -> float:
+    seconds = 0.0
+    for part in value.split(":"):
+        seconds = seconds * 60 + float(part)
+    return seconds
+
+
+def whisper_line_progress(line: str, duration_seconds: float | None) -> int | None:
+    if not duration_seconds or duration_seconds <= 0:
+        return None
+    match = WHISPER_TIMESTAMP_RANGE.search(line)
+    if not match:
+        return None
+    return max(0, min(100, round(timestamp_seconds(match.group("end")) / duration_seconds * 100)))
 
 
 def resolve_source_identity(source_url: str) -> dict[str, str]:
@@ -362,6 +384,9 @@ class JobManager:
         try:
             with yt_dlp.YoutubeDL(options) as downloader:
                 info = downloader.extract_info(job.source_url, download=True)
+                duration = info.get("duration")
+                if isinstance(duration, (int, float)) and duration > 0:
+                    job.duration_seconds = float(duration)
                 requested = info.get("requested_downloads") or []
                 if requested and requested[0].get("filepath"):
                     return Path(requested[0]["filepath"])
@@ -381,6 +406,8 @@ class JobManager:
 
     def _transcribe(self, job: Job, audio_file: Path, temporary_path: Path) -> None:
         job.state = "transcribing"
+        job.progress = 0 if job.duration_seconds else None
+        job.last_reported_progress = None
         output_directory = temporary_path / "output"
         output_directory.mkdir()
         executable = shutil.which("whisper")
@@ -407,8 +434,12 @@ class JobManager:
             job.options["language"] or "auto",
             job.options["device"],
         )
+        if job.duration_seconds:
+            logger.info("Whisper job %s duration is %.1f seconds", job.id, job.duration_seconds)
+        else:
+            logger.warning("Whisper job %s has no media duration; transcription progress is unavailable", job.id)
         job.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        output_lines: list[str] = []
+        output_lines: deque[str] = deque(maxlen=100)
 
         def log_whisper_output() -> None:
             if job.process is None or job.process.stdout is None:
@@ -419,6 +450,16 @@ class JobManager:
                     continue
                 output_lines.append(line)
                 logger.info("Whisper job %s: %s", job.id, line)
+                progress = whisper_line_progress(line, job.duration_seconds)
+                if progress is not None:
+                    job.progress = progress
+                    if (
+                        job.last_reported_progress is None
+                        or progress >= job.last_reported_progress + 5
+                        or progress == 100
+                    ):
+                        logger.info("Whisper job %s transcription: %d%%", job.id, progress)
+                        job.last_reported_progress = progress
 
         output_thread = threading.Thread(target=log_whisper_output, name=f"whisper-output-{job.id}", daemon=True)
         output_thread.start()
@@ -433,8 +474,9 @@ class JobManager:
                 return
         output_thread.join(timeout=1)
         if job.process.returncode != 0:
-            error_output = "\n".join(output_lines[-10:]).strip()
+            error_output = "\n".join(list(output_lines)[-10:]).strip()
             raise RuntimeError(error_output or f"Whisper exited with code {job.process.returncode}")
+        job.progress = 100
         logger.info("Whisper job %s finished transcribing", job.id)
 
     def _store_entry(self, job: Job, subtitle_file: Path) -> dict[str, Any]:

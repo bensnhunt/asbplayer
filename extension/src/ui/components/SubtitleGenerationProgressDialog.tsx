@@ -42,7 +42,7 @@ export default function SubtitleGenerationProgressDialog({ open, generation, onP
         activeJob?.state === 'downloading' && activeJob.progress !== undefined
             ? t('extension.subtitleGeneration.downloading', { progress: activeJob.progress })
             : activeJob?.state === 'transcribing'
-              ? t('extension.subtitleGeneration.transcribing')
+              ? `${t('extension.subtitleGeneration.transcribing')} (${activeJob.progress ?? 0}%)`
               : t('extension.subtitleGeneration.queued');
 
     return (
@@ -65,11 +65,7 @@ export default function SubtitleGenerationProgressDialog({ open, generation, onP
                             {stateText}
                         </Typography>
                         <LinearProgress
-                            variant={
-                                activeJob.state === 'downloading' && activeJob.progress !== undefined
-                                    ? 'determinate'
-                                    : 'indeterminate'
-                            }
+                            variant={activeJob.progress !== undefined ? 'determinate' : 'indeterminate'}
                             value={activeJob.progress}
                         />
                     </Box>
