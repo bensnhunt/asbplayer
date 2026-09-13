@@ -21,6 +21,7 @@ interface Props {
 }
 
 const activeStates = new Set(['queued', 'downloading', 'loading-model', 'transcribing']);
+const jobPollIntervalMs = 1_000;
 
 const formatRemainingTime = (seconds: number) => {
     const totalSeconds = Math.max(0, Math.round(seconds));
@@ -41,7 +42,7 @@ export default function SubtitleGenerationProgressDialog({ open, generation, onP
     useEffect(() => {
         if (!activeJobId) return;
         onPoll(activeJobId);
-        const timer = window.setInterval(() => onPoll(activeJobId), 250);
+        const timer = window.setInterval(() => onPoll(activeJobId), jobPollIntervalMs);
         return () => window.clearInterval(timer);
     }, [activeJobId, onPoll]);
 
