@@ -8,6 +8,7 @@ from asbplayer_whisper_server.main import (
     Job,
     cache_key,
     normalize_url,
+    request_is_authorized,
     source_key,
     validate_options,
     whisper_tqdm_frame_counts,
@@ -37,6 +38,13 @@ class WhisperServerTests(unittest.TestCase):
         self.assertIsNone(options["language"])
         self.assertIsNone(options["initial_prompt"])
         self.assertIsNone(options["model_dir"])
+
+    def test_requires_the_configured_bearer_token(self):
+        self.assertTrue(request_is_authorized(None, None))
+        self.assertFalse(request_is_authorized(None, "secret"))
+        self.assertFalse(request_is_authorized("Basic secret", "secret"))
+        self.assertFalse(request_is_authorized("Bearer wrong", "secret"))
+        self.assertTrue(request_is_authorized("Bearer secret", "secret"))
 
     def test_runtime_options_do_not_change_cache_key(self):
         identity = {"extractor": "Youtube", "id": "video-id", "url": "https://example.test/watch?v=video-id"}

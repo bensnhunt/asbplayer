@@ -276,6 +276,8 @@ export const defaultSettings: AsbplayerSettings = {
     streamingScreenshotDelay: 1000,
     streamingSubtitleListPreference: SubtitleListPreference.noSubtitleList,
     streamingEnableOverlay: true,
+    whisperServerUrl: 'http://127.0.0.1:8767',
+    whisperServerAuthToken: '',
     streamingPages: {
         netflix: {},
         youtube: {},

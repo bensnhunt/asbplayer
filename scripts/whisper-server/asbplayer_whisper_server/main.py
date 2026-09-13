@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import argparse
 import asyncio
 from collections import deque
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -19,11 +21,13 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from pydantic import BaseModel, Field
 
 
 DEFAULT_CACHE_ROOT = Path(os.environ.get("ASBPLAYER_WHISPER_CACHE_DIR", Path.home() / ".cache/asbplayer/whisper"))
+AUTH_TOKEN_ENVIRONMENT_VARIABLE = "ASBPLAYER_WHISPER_AUTH_TOKEN"
+DEFAULT_DEVICE = os.environ.get("ASBPLAYER_WHISPER_DEVICE", "cpu")
 logger = logging.getLogger("uvicorn.error")
 WHISPER_TQDM_PROGRESS = re.compile(
     r"\d{1,3}%\|.*?\|\s*(?P<current>[\d,]+)/(?P<total>[\d,]+)"
@@ -93,7 +97,7 @@ OPTION_SPECS = (
         ),
     ),
     OptionSpec("model_dir", "Model directory", "Runtime", "string", None, False),
-    OptionSpec("device", "Device", "Runtime", "string", "cpu", False),
+    OptionSpec("device", "Device", "Runtime", "string", DEFAULT_DEVICE, False),
     OptionSpec("task", "Task", "Transcription", "string", "transcribe", True, choices=("transcribe", "translate")),
     OptionSpec("language", "Source language", "Transcription", "string", None, True, "Leave blank for auto-detection."),
     OptionSpec("temperature", "Temperature", "Decoding", "number", 0, True),
@@ -122,6 +126,34 @@ OPTION_SPECS = (
     OptionSpec("hallucination_silence_threshold", "Hallucination silence threshold", "Decoding", "number", None, True),
 )
 SPECS_BY_NAME = {spec.name: spec for spec in OPTION_SPECS}
+
+
+def configured_auth_token() -> str | None:
+    token = os.environ.get(AUTH_TOKEN_ENVIRONMENT_VARIABLE, "").strip()
+    return token or None
+
+
+def request_is_authorized(authorization: str | None, expected_token: str | None) -> bool:
+    if expected_token is None:
+        return True
+    if authorization is None:
+        return False
+    scheme, separator, token = authorization.partition(" ")
+    return separator == " " and scheme.lower() == "bearer" and hmac.compare_digest(token, expected_token)
+
+
+def require_authentication(authorization: str | None = Header(default=None)) -> None:
+    if request_is_authorized(authorization, configured_auth_token()):
+        return
+    raise HTTPException(
+        status_code=401,
+        detail="A valid bearer token is required for this Whisper service.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def is_loopback_host(host: str) -> bool:
+    return host.lower().strip("[]") in {"localhost", "127.0.0.1", "::1"}
 
 
 class CreateJobRequest(BaseModel):
@@ -654,7 +686,7 @@ class JobManager:
 
 
 manager = JobManager()
-app = FastAPI(title="asbplayer Whisper Server", version="1")
+app = FastAPI(title="asbplayer Whisper Server", version="1", dependencies=[Depends(require_authentication)])
 
 
 @app.on_event("startup")
@@ -719,7 +751,17 @@ async def get_srt(entry_id: str) -> Response:
 def main() -> None:
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8767)
+    parser = argparse.ArgumentParser(description="Run the asbplayer Whisper subtitle service.")
+    parser.add_argument("--host", default=os.environ.get("ASBPLAYER_WHISPER_HOST", "127.0.0.1"))
+    parser.add_argument("--port", default=os.environ.get("ASBPLAYER_WHISPER_PORT", "8767"), type=int)
+    arguments = parser.parse_args()
+
+    if not is_loopback_host(arguments.host) and configured_auth_token() is None:
+        parser.error(
+            f"Set {AUTH_TOKEN_ENVIRONMENT_VARIABLE} before binding the Whisper service outside loopback."
+        )
+
+    uvicorn.run(app, host=arguments.host, port=arguments.port)
 
 
 if __name__ == "__main__":

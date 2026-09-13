@@ -586,6 +586,13 @@ export interface SubtitleGenerationMessage extends Message {
     readonly cacheEntryId?: string;
 }
 
+/** Tests an authenticated local or remote Whisper endpoint before it is saved in extension settings. */
+export interface WhisperServiceHealthMessage extends Message {
+    readonly command: 'whisper-service-health';
+    readonly url: string;
+    readonly authToken: string;
+}
+
 export interface SubtitleGenerationResponse {
     readonly error?: string;
     readonly capabilities?: WhisperCapabilities;
