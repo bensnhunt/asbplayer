@@ -289,6 +289,7 @@
             "completed": "Die erstellten Untertitel sind im Auswahlmenü bereit.",
             "cancel": "Erstellung abbrechen",
             "generate": "Erstellen",
+            "advancedOptions": "Erweiterte Whisper-Optionen",
             "close": "Schließen"
         },
         "videoSelect": {

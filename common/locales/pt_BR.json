@@ -289,6 +289,7 @@
             "completed": "As legendas geradas estão prontas no seletor.",
             "cancel": "Cancelar geração",
             "generate": "Gerar",
+            "advancedOptions": "Opções avançadas do Whisper",
             "close": "Fechar"
         },
         "videoSelect": {

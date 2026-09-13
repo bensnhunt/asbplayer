@@ -289,6 +289,7 @@
             "completed": "Subtitle yang dibuat siap di pemilih.",
             "cancel": "Batalkan pembuatan",
             "generate": "Buat",
+            "advancedOptions": "Opsi Whisper lanjutan",
             "close": "Tutup"
         },
         "videoSelect": {

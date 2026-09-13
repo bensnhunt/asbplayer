@@ -289,6 +289,7 @@
             "completed": "生成した字幕をセレクターで選択できます。",
             "cancel": "生成をキャンセル",
             "generate": "生成",
+            "advancedOptions": "Whisper の詳細オプション",
             "close": "閉じる"
         },
         "videoSelect": {

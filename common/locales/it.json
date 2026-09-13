@@ -289,6 +289,7 @@
             "completed": "I sottotitoli generati sono pronti nel selettore.",
             "cancel": "Annulla generazione",
             "generate": "Genera",
+            "advancedOptions": "Opzioni avanzate di Whisper",
             "close": "Chiudi"
         },
         "videoSelect": {

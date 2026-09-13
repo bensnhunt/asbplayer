@@ -289,6 +289,7 @@
             "completed": "生成的字幕已可在选择器中使用。",
             "cancel": "取消生成",
             "generate": "生成",
+            "advancedOptions": "Whisper 高级选项",
             "close": "关闭"
         },
         "videoSelect": {

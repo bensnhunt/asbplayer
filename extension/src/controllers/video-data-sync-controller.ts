@@ -102,6 +102,7 @@ export default class VideoDataSyncController {
     private _dataReceivedEventTarget?: EventTarget;
     private _isTutorial: boolean;
     private _generationJobId?: string;
+    private _applyingGeneratedSubtitleCacheId?: string;
 
     constructor(context: Binding, settings: SettingsProvider) {
         this._context = context;
@@ -591,6 +592,7 @@ export default class VideoDataSyncController {
     }
 
     private _prepareShow() {
+        this._applyingGeneratedSubtitleCacheId = undefined;
         this._openedLocation = window.location.href;
         this._wasPaused = this._wasPaused ?? this._context.video.paused;
         this._context.pause();
@@ -952,6 +954,24 @@ export default class VideoDataSyncController {
                     subtitles,
                     generatedSubtitleEntryId: track.id,
                 });
+
+                // A completed generated track is the user's explicit selection.
+                // Apply it through the same cache-backed subtitle path as the
+                // selector's Confirm action, then dismiss both generation and
+                // selector dialogs. Multiple in-flight status polls can report
+                // the completed job, so only apply a cache entry once.
+                if (
+                    response.job.state === 'completed' &&
+                    this._applyingGeneratedSubtitleCacheId !== response.job.entry.id
+                ) {
+                    this._applyingGeneratedSubtitleCacheId = response.job.entry.id;
+                    const dataWasSynced = await this._syncData([track]);
+                    if (dataWasSynced) {
+                        this._hideAndResume();
+                    } else {
+                        this._applyingGeneratedSubtitleCacheId = undefined;
+                    }
+                }
             }
             return;
         }

@@ -1,4 +1,7 @@
 import Alert from '@mui/material/Alert';
+import Accordion from '@mui/material/Accordion';
+import AccordionDetails from '@mui/material/AccordionDetails';
+import AccordionSummary from '@mui/material/AccordionSummary';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import Dialog from '@mui/material/Dialog';
@@ -13,6 +16,7 @@ import MenuItem from '@mui/material/MenuItem';
 import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useEffect, useMemo, useState } from 'react';
 import type { SubtitleGenerationUiState, WhisperOptionSchema, WhisperOptionValue } from '@project/common';
 import { useTranslation } from 'react-i18next';
@@ -33,13 +37,14 @@ const optionValue = (value: string, type: 'string' | 'number' | 'boolean'): Whis
 export default function SubtitleGenerationDialog({ open, generation, onStart, onClose }: Props) {
     const { t } = useTranslation();
     const [options, setOptions] = useState<Record<string, WhisperOptionValue>>({});
-    const groupedOptions = useMemo(() => {
+    const groupedAdvancedOptions = useMemo(() => {
         const groups = new Map<string, WhisperOptionSchema[]>();
-        for (const option of generation.capabilities?.options ?? []) {
+        for (const option of generation.capabilities?.options.filter((option) => option.name !== 'model') ?? []) {
             groups.set(option.group, [...(groups.get(option.group) ?? []), option]);
         }
         return [...groups.entries()];
     }, [generation.capabilities]);
+    const modelOption = generation.capabilities?.options.find((option) => option.name === 'model');
 
     useEffect(() => {
         if (!generation.capabilities) return;
@@ -47,6 +52,48 @@ export default function SubtitleGenerationDialog({ open, generation, onStart, on
             Object.fromEntries(generation.capabilities.options.map((option) => [option.name, option.defaultValue]))
         );
     }, [generation.capabilities]);
+
+    const renderOption = (option: WhisperOptionSchema) => (
+        <Grid item xs={12} sm={6} key={option.name}>
+            {option.type === 'boolean' ? (
+                <FormControlLabel
+                    label={option.label}
+                    control={
+                        <Switch
+                            checked={Boolean(options[option.name])}
+                            onChange={(event) =>
+                                setOptions((current) => ({
+                                    ...current,
+                                    [option.name]: event.target.checked,
+                                }))
+                            }
+                        />
+                    }
+                />
+            ) : (
+                <TextField
+                    fullWidth
+                    select={Boolean(option.choices)}
+                    type={option.type === 'number' ? 'number' : 'text'}
+                    label={option.label}
+                    helperText={option.description}
+                    value={options[option.name] ?? ''}
+                    onChange={(event) =>
+                        setOptions((current) => ({
+                            ...current,
+                            [option.name]: optionValue(event.target.value, option.type),
+                        }))
+                    }
+                >
+                    {option.choices?.map((choice) => (
+                        <MenuItem key={String(choice)} value={choice}>
+                            {String(choice)}
+                        </MenuItem>
+                    ))}
+                </TextField>
+            )}
+        </Grid>
+    );
 
     return (
         <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
@@ -72,57 +119,31 @@ export default function SubtitleGenerationDialog({ open, generation, onStart, on
                         {t('extension.subtitleGeneration.connecting')}
                     </Alert>
                 )}
-                {groupedOptions.map(([group, groupOptions]) => (
-                    <section key={group}>
-                        <Divider sx={{ my: 2 }} />
-                        <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                            {group}
-                        </Typography>
-                        <Grid container spacing={2}>
-                            {groupOptions.map((option) => (
-                                <Grid item xs={12} sm={6} key={option.name}>
-                                    {option.type === 'boolean' ? (
-                                        <FormControlLabel
-                                            label={option.label}
-                                            control={
-                                                <Switch
-                                                    checked={Boolean(options[option.name])}
-                                                    onChange={(event) =>
-                                                        setOptions((current) => ({
-                                                            ...current,
-                                                            [option.name]: event.target.checked,
-                                                        }))
-                                                    }
-                                                />
-                                            }
-                                        />
-                                    ) : (
-                                        <TextField
-                                            fullWidth
-                                            select={Boolean(option.choices)}
-                                            type={option.type === 'number' ? 'number' : 'text'}
-                                            label={option.label}
-                                            helperText={option.description}
-                                            value={options[option.name] ?? ''}
-                                            onChange={(event) =>
-                                                setOptions((current) => ({
-                                                    ...current,
-                                                    [option.name]: optionValue(event.target.value, option.type),
-                                                }))
-                                            }
-                                        >
-                                            {option.choices?.map((choice) => (
-                                                <MenuItem key={String(choice)} value={choice}>
-                                                    {String(choice)}
-                                                </MenuItem>
-                                            ))}
-                                        </TextField>
-                                    )}
-                                </Grid>
+                {modelOption && (
+                    <Grid container spacing={2}>
+                        {renderOption(modelOption)}
+                    </Grid>
+                )}
+                {groupedAdvancedOptions.length > 0 && (
+                    <Accordion disableGutters elevation={0} sx={{ mt: 2, '&:before': { display: 'none' } }}>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                            <Typography>{t('extension.subtitleGeneration.advancedOptions')}</Typography>
+                        </AccordionSummary>
+                        <AccordionDetails sx={{ px: 0 }}>
+                            {groupedAdvancedOptions.map(([group, groupOptions]) => (
+                                <section key={group}>
+                                    <Divider sx={{ my: 2 }} />
+                                    <Typography variant="subtitle1" sx={{ mb: 1 }}>
+                                        {group}
+                                    </Typography>
+                                    <Grid container spacing={2}>
+                                        {groupOptions.map(renderOption)}
+                                    </Grid>
+                                </section>
                             ))}
-                        </Grid>
-                    </section>
-                ))}
+                        </AccordionDetails>
+                    </Accordion>
+                )}
             </DialogContent>
             <DialogActions>
                 <Button onClick={onClose}>{t('extension.subtitleGeneration.close')}</Button>
