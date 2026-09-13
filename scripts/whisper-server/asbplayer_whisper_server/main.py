@@ -185,6 +185,13 @@ def validate_options(raw: dict[str, Any]) -> dict[str, Any]:
     normalized: dict[str, Any] = {}
     for spec in OPTION_SPECS:
         value = raw.get(spec.name, spec.default)
+        # MUI represents an empty optional text field as an empty string. The
+        # Whisper CLI requires --language to be omitted for language detection,
+        # rather than receiving --language ''. Treat every optional text field
+        # consistently so it is omitted when building the command below.
+        if spec.kind == "string" and spec.default is None and isinstance(value, str) and not value.strip():
+            normalized[spec.name] = None
+            continue
         if value is None:
             normalized[spec.name] = None
             continue

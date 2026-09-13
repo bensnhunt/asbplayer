@@ -31,6 +31,13 @@ class WhisperServerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unsupported Whisper option"):
             validate_options({"verbose": True})
 
+    def test_omits_empty_optional_text_options(self):
+        options = validate_options({"language": "", "initial_prompt": "   ", "model_dir": ""})
+
+        self.assertIsNone(options["language"])
+        self.assertIsNone(options["initial_prompt"])
+        self.assertIsNone(options["model_dir"])
+
     def test_runtime_options_do_not_change_cache_key(self):
         identity = {"extractor": "Youtube", "id": "video-id", "url": "https://example.test/watch?v=video-id"}
         standard = validate_options({"model": "small", "device": "cpu"})
