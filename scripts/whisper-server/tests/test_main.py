@@ -11,6 +11,7 @@ from asbplayer_whisper_server.main import (
     source_key,
     validate_options,
     whisper_tqdm_frame_counts,
+    whisper_tqdm_model_download,
     whisper_tqdm_remaining_seconds,
 )
 
@@ -51,6 +52,17 @@ class WhisperServerTests(unittest.TestCase):
         )
         self.assertIsNone(whisper_tqdm_frame_counts("Detected language: Turkish"))
 
+    def test_reports_progress_from_whisper_model_download(self):
+        self.assertEqual(
+            whisper_tqdm_model_download(" 25%|##5       | 380M/1.48G [00:00<00:00, 15.9TiB/s]"),
+            (25, "380M", "1.48G"),
+        )
+        self.assertEqual(
+            whisper_tqdm_model_download("  0%|          | 0.00/1.48G [00:00<?, ?iB/s]"),
+            (0, "0.00", "1.48G"),
+        )
+        self.assertIsNone(whisper_tqdm_model_download(" 36%|###6      | 2,200/6,060 [00:10<00:17, 215.65frames/s]"))
+
     def test_reports_remaining_time_from_whisper_frame_counter(self):
         self.assertEqual(
             whisper_tqdm_remaining_seconds(" 36%|###6      | 2,200/6,060 [00:10<01:17, 215.65frames/s]"), 77
@@ -81,6 +93,33 @@ class WhisperServerTests(unittest.TestCase):
                 "remainingSeconds": 77,
                 "completedFrames": 2200,
                 "totalFrames": 6060,
+            },
+        )
+
+    def test_exposes_native_model_download_progress_in_job_status(self):
+        job = Job(
+            id="job-id",
+            source_url="https://example.test/watch?v=video-id",
+            source_identity={"extractor": "Example", "id": "video-id"},
+            source_key="source-key",
+            cache_id="cache-id",
+            options={},
+            state="loading-model",
+            progress=25,
+            model_downloaded="380M",
+            model_total="1.48G",
+            remaining_seconds=20,
+        )
+
+        self.assertEqual(
+            job.public(),
+            {
+                "id": "job-id",
+                "state": "loading-model",
+                "progress": 25,
+                "remainingSeconds": 20,
+                "modelDownloaded": "380M",
+                "modelTotal": "1.48G",
             },
         )
 

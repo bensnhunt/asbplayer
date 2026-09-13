@@ -20,7 +20,7 @@ interface Props {
     onClose: () => void;
 }
 
-const activeStates = new Set(['queued', 'downloading', 'transcribing']);
+const activeStates = new Set(['queued', 'downloading', 'loading-model', 'transcribing']);
 
 const formatRemainingTime = (seconds: number) => {
     const totalSeconds = Math.max(0, Math.round(seconds));
@@ -53,11 +53,15 @@ export default function SubtitleGenerationProgressDialog({ open, generation, onP
     const stateText =
         activeJob?.state === 'downloading' && activeJob.progress !== undefined
             ? t('extension.subtitleGeneration.downloading', { progress: activeJob.progress })
-            : activeJob?.state === 'transcribing'
-              ? activeJob.progress === undefined
-                  ? t('extension.subtitleGeneration.transcribing')
-                  : `${t('extension.subtitleGeneration.transcribing')} (${activeJob.progress}%)`
-              : t('extension.subtitleGeneration.queued');
+            : activeJob?.state === 'loading-model' && activeJob.progress !== undefined
+              ? t('extension.subtitleGeneration.downloadingModel', { progress: activeJob.progress })
+              : activeJob?.state === 'loading-model'
+                ? t('extension.subtitleGeneration.loadingModel')
+                : activeJob?.state === 'transcribing'
+                  ? activeJob.progress === undefined
+                      ? t('extension.subtitleGeneration.transcribing')
+                      : `${t('extension.subtitleGeneration.transcribing')} (${activeJob.progress}%)`
+                  : t('extension.subtitleGeneration.queued');
 
     return (
         <Dialog open={open} onClose={close} fullWidth maxWidth="sm">
@@ -82,6 +86,14 @@ export default function SubtitleGenerationProgressDialog({ open, generation, onP
                             variant={activeJob.progress !== undefined ? 'determinate' : 'indeterminate'}
                             value={activeJob.progress}
                         />
+                        {activeJob.modelDownloaded !== undefined && activeJob.modelTotal !== undefined && (
+                            <Typography aria-live="polite" variant="caption" sx={{ display: 'block', mt: 1 }}>
+                                {t('extension.subtitleGeneration.modelProgress', {
+                                    current: activeJob.modelDownloaded,
+                                    total: activeJob.modelTotal,
+                                })}
+                            </Typography>
+                        )}
                         {activeJob.completedFrames !== undefined && activeJob.totalFrames !== undefined && (
                             <Typography aria-live="polite" variant="caption" sx={{ display: 'block', mt: 1 }}>
                                 {t('extension.subtitleGeneration.frameProgress', {

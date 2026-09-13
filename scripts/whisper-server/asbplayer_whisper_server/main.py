@@ -28,6 +28,11 @@ logger = logging.getLogger("uvicorn.error")
 WHISPER_TQDM_PROGRESS = re.compile(
     r"\d{1,3}%\|.*?\|\s*(?P<current>[\d,]+)/(?P<total>[\d,]+)"
 )
+WHISPER_TQDM_MODEL_DOWNLOAD = re.compile(
+    r"(?P<percent>\d{1,3})%\|.*?\|\s*"
+    r"(?P<current>\d+(?:\.\d+)?)(?P<current_unit>(?:[KMGTPE]?i?B|[KMGTPE])?)/"
+    r"(?P<total>\d+(?:\.\d+)?)(?P<total_unit>(?:[KMGTPE]?i?B|[KMGTPE])?)\s+\["
+)
 WHISPER_TQDM_REMAINING = re.compile(r"<(?P<remaining>\d+:\d{2}(?::\d{2})?)")
 
 
@@ -140,6 +145,8 @@ class Job:
     remaining_seconds: int | None = None
     completed_frames: int | None = None
     total_frames: int | None = None
+    model_downloaded: str | None = None
+    model_total: str | None = None
     cancel_requested: threading.Event = field(default_factory=threading.Event)
     process: subprocess.Popen[bytes] | None = None
 
@@ -152,6 +159,9 @@ class Job:
         if self.completed_frames is not None and self.total_frames is not None:
             result["completedFrames"] = self.completed_frames
             result["totalFrames"] = self.total_frames
+        if self.model_downloaded is not None and self.model_total is not None:
+            result["modelDownloaded"] = self.model_downloaded
+            result["modelTotal"] = self.model_total
         if self.error:
             result["error"] = self.error
         if self.entry:
@@ -218,6 +228,19 @@ def whisper_tqdm_frame_counts(line: str) -> tuple[int, int] | None:
     if total <= 0:
         return None
     return current, total
+
+
+def whisper_tqdm_model_download(line: str) -> tuple[int, str, str] | None:
+    match = WHISPER_TQDM_MODEL_DOWNLOAD.search(line)
+    if not match:
+        return None
+    if not match.group("current_unit") and not match.group("total_unit"):
+        return None
+    return (
+        int(match.group("percent")),
+        f"{match.group('current')}{match.group('current_unit')}",
+        f"{match.group('total')}{match.group('total_unit')}",
+    )
 
 
 def whisper_tqdm_remaining_seconds(line: str) -> int | None:
@@ -306,7 +329,7 @@ class JobManager:
             )
 
         for job in self.jobs.values():
-            if job.cache_id == entry_id and job.state in {"queued", "downloading", "transcribing"}:
+            if job.cache_id == entry_id and job.state in {"queued", "downloading", "loading-model", "transcribing"}:
                 logger.info("Whisper job %s already exists for this source", job.id)
                 return job
 
@@ -420,12 +443,14 @@ class JobManager:
         return audio_files[0]
 
     def _transcribe(self, job: Job, audio_file: Path, temporary_path: Path) -> None:
-        job.state = "transcribing"
-        job.progress = 0
+        job.state = "loading-model"
+        job.progress = None
         job.last_reported_progress = None
         job.remaining_seconds = None
         job.completed_frames = None
         job.total_frames = None
+        job.model_downloaded = None
+        job.model_total = None
         output_directory = temporary_path / "output"
         output_directory.mkdir()
         executable = shutil.which("whisper")
@@ -447,14 +472,14 @@ class JobManager:
                 continue
             command.extend([f"--{spec.name}", str(value)])
         logger.info(
-            "Whisper job %s is transcribing (model=%s, task=%s, language=%s, device=%s)",
+            "Whisper job %s is loading model=%s (task=%s, language=%s, device=%s)",
             job.id,
             job.options["model"],
             job.options["task"],
             job.options["language"] or "auto",
             job.options["device"],
         )
-        logger.info("Whisper job %s will report Whisper's native frame counter and remaining-time estimate", job.id)
+        logger.info("Whisper job %s will report native model-download and frame progress estimates", job.id)
         whisper_environment = os.environ.copy()
         whisper_environment["PYTHONUNBUFFERED"] = "1"
         job.process = subprocess.Popen(
@@ -465,7 +490,34 @@ class JobManager:
         )
         output_lines: deque[str] = deque(maxlen=100)
 
+        def update_model_progress(progress: int, downloaded: str, total: str, remaining_seconds: int | None) -> None:
+            job.state = "loading-model"
+            job.progress = progress
+            job.model_downloaded = downloaded
+            job.model_total = total
+            job.remaining_seconds = remaining_seconds
+            if (
+                job.last_reported_progress is None
+                or progress >= job.last_reported_progress + 5
+                or progress == 100
+            ):
+                logger.info(
+                    "Whisper job %s native model download: %s/%s (%d%%)%s",
+                    job.id,
+                    downloaded,
+                    total,
+                    progress,
+                    f", {remaining_seconds}s remaining" if remaining_seconds is not None else "",
+                )
+                job.last_reported_progress = progress
+
         def update_progress(completed_frames: int, total_frames: int, remaining_seconds: int | None = None) -> None:
+            if job.state != "transcribing":
+                job.state = "transcribing"
+                job.last_reported_progress = None
+                job.remaining_seconds = None
+                job.model_downloaded = None
+                job.model_total = None
             job.completed_frames = completed_frames
             job.total_frames = total_frames
             progress = max(0, min(100, round(completed_frames / total_frames * 100)))
@@ -494,6 +546,10 @@ class JobManager:
             if not line:
                 return
             output_lines.append(line)
+            model_download = whisper_tqdm_model_download(line)
+            if model_download is not None:
+                update_model_progress(*model_download, whisper_tqdm_remaining_seconds(line))
+                return
             frame_counts = whisper_tqdm_frame_counts(line)
             if frame_counts is not None:
                 update_progress(*frame_counts, whisper_tqdm_remaining_seconds(line))

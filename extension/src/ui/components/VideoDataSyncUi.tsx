@@ -98,7 +98,7 @@ export default function VideoDataSyncUi({ bridge }: Props) {
     }, [bridge]);
     const handleCancel = useCallback(() => {
         const job = subtitleGeneration.job;
-        if (job && ['queued', 'downloading', 'transcribing'].includes(job.state)) {
+        if (job && ['queued', 'downloading', 'loading-model', 'transcribing'].includes(job.state)) {
             bridge.sendMessageFromServer({
                 command: 'subtitle-generation',
                 operation: 'cancel',

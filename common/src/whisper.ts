@@ -23,6 +23,7 @@ export type SubtitleGenerationJobState =
     | 'ready'
     | 'queued'
     | 'downloading'
+    | 'loading-model'
     | 'transcribing'
     | 'completed'
     | 'failed'
@@ -40,6 +41,10 @@ export interface SubtitleGenerationJob {
     readonly id: string;
     readonly state: SubtitleGenerationJobState;
     readonly progress?: number;
+    /** Native Whisper model-download counter, such as `380M`. */
+    readonly modelDownloaded?: string;
+    /** Native Whisper model-download total, such as `1.48G`. */
+    readonly modelTotal?: string;
     /** Native Whisper tqdm frame counter. */
     readonly completedFrames?: number;
     /** Native Whisper tqdm frame counter total. */

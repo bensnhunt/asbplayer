@@ -41,7 +41,7 @@ This service is separate from the optional WebSocket/AnkiConnect companion serve
 
 1. Open asbplayer's **Select Subtitles** pop-out on a desktop streaming page.
 2. Choose **Generate Subtitles** at the bottom.
-3. Configure Whisper and choose **Generate**. The dialog reports download and transcription state; canceling the dialog cancels its job.
+3. Configure Whisper and choose **Generate**. The dialog reports audio download, Whisper model download/loading, and transcription state; canceling the dialog cancels its job.
 4. When finished, the generated SRT is added and selected in the first empty subtitle slot. Select **OK** to load it.
 
 The service stores completed SRT files in your local user cache directory. A revisit to the same video lists cached variants and selects the newest available result. Cache identity includes the video and output-affecting Whisper options, so changing a model or decoding setting creates a separate result while changing a runtime setting such as CPU thread count does not.
