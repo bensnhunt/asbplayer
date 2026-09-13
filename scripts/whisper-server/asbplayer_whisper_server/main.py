@@ -289,21 +289,28 @@ def whisper_tqdm_remaining_seconds(line: str) -> int | None:
     return round(timestamp_seconds(match.group("remaining")))
 
 
-def resolve_source_identity(source_url: str) -> dict[str, str]:
-    normalized = normalize_url(source_url)
-    try:
-        import yt_dlp
+def fallback_source_identity(normalized_url: str) -> dict[str, str]:
+    return {"extractor": "url", "id": normalized_url, "url": normalized_url}
 
-        with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "noplaylist": True}) as downloader:
-            info = downloader.extract_info(source_url, download=False)
-        return {
-            "extractor": str(info.get("extractor_key") or info.get("extractor") or "url"),
-            "id": str(info.get("id") or normalized),
-            "url": normalized,
-        }
-    except Exception as error:
-        # Cache lookup remains useful during temporary extractor/network failures.
-        return {"extractor": "url", "id": normalized, "url": normalized}
+
+def source_identity_from_downloader_info(source_url: str, info: dict[str, Any]) -> dict[str, str]:
+    """Build the stable cache identity after yt-dlp has resolved the source.
+
+    Resolving this identity used to happen while handling POST /v1/jobs and
+    GET /v1/cache. That made requests wait for a network-bound yt-dlp metadata
+    request, which can exceed a tunnel proxy's request timeout. The worker
+    already downloads the source, so reuse that result instead.
+    """
+    normalized_url = normalize_url(source_url)
+    return {
+        "extractor": str(info.get("extractor_key") or info.get("extractor") or "url"),
+        "id": str(info.get("id") or normalized_url),
+        "url": normalized_url,
+    }
+
+
+def output_options(options: dict[str, Any]) -> dict[str, Any]:
+    return {spec.name: options[spec.name] for spec in OPTION_SPECS if spec.affects_output}
 
 
 class JobManager:
@@ -348,19 +355,26 @@ class JobManager:
     async def create(self, request: CreateJobRequest) -> Job:
         try:
             options = validate_options(request.whisperOptions)
-            identity = await asyncio.to_thread(resolve_source_identity, request.sourceUrl)
+            normalized_url = normalize_url(request.sourceUrl)
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
+        # Never invoke yt-dlp from a request handler. In particular, a Colab
+        # quick tunnel has a finite request timeout, while an extractor can
+        # take much longer to resolve a video. The worker upgrades this
+        # fallback identity to yt-dlp's canonical extractor/video identity.
+        identity = fallback_source_identity(normalized_url)
         entry_id = cache_key(identity, options)
-        metadata = self.read_entry(entry_id)
+        metadata = self._matching_cached_entry(normalized_url, options)
         if metadata:
+            entry_id = str(metadata["id"])
+            identity = metadata.get("sourceIdentity") or identity
             logger.info("Whisper job cache hit for %s", entry_id[:12])
             return Job(
                 id=f"cache-{entry_id[:12]}",
                 source_url=request.sourceUrl,
                 source_identity=identity,
-                source_key=source_key(identity),
+                source_key=str(metadata.get("sourceKey") or source_key(identity)),
                 cache_id=entry_id,
                 options=options,
                 state="completed",
@@ -368,7 +382,11 @@ class JobManager:
             )
 
         for job in self.jobs.values():
-            if job.cache_id == entry_id and job.state in {"queued", "downloading", "loading-model", "transcribing"}:
+            if (
+                normalize_url(job.source_url) == normalized_url
+                and output_options(job.options) == output_options(options)
+                and job.state in {"queued", "downloading", "loading-model", "transcribing"}
+            ):
                 logger.info("Whisper job %s already exists for this source", job.id)
                 return job
 
@@ -407,6 +425,12 @@ class JobManager:
                 if job.cancel_requested.is_set():
                     job.state = "cancelled"
                     logger.info("Whisper job %s cancelled after download", job.id)
+                    return
+                existing_entry = self.read_entry(job.cache_id)
+                if existing_entry:
+                    job.entry = self.public_entry(existing_entry)
+                    job.state = "completed"
+                    logger.info("Whisper job %s found canonical cache entry %s", job.id, job.cache_id[:12])
                     return
                 self._transcribe(job, audio_file, temporary_path)
                 if job.cancel_requested.is_set():
@@ -464,6 +488,15 @@ class JobManager:
         try:
             with yt_dlp.YoutubeDL(options) as downloader:
                 info = downloader.extract_info(job.source_url, download=True)
+                job.source_identity = source_identity_from_downloader_info(job.source_url, info)
+                job.source_key = source_key(job.source_identity)
+                job.cache_id = cache_key(job.source_identity, job.options)
+                logger.info(
+                    "Whisper job %s resolved source as %s/%s",
+                    job.id,
+                    job.source_identity["extractor"],
+                    job.source_identity["id"],
+                )
                 requested = info.get("requested_downloads") or []
                 if requested and requested[0].get("filepath"):
                     return Path(requested[0]["filepath"])
@@ -653,10 +686,24 @@ class JobManager:
         logger.info("Whisper job %s saved cache entry %s", job.id, job.cache_id[:12])
         return self.public_entry(self.read_entry(job.cache_id) or metadata)
 
+    def _matching_cached_entry(self, normalized_url: str, options: dict[str, Any]) -> dict[str, Any] | None:
+        expected_options = output_options(options)
+        for metadata_path in self.entries_root.glob("*/metadata.json"):
+            try:
+                metadata = json.loads(metadata_path.read_text())
+            except json.JSONDecodeError:
+                continue
+            if metadata.get("sourceUrl") != normalized_url:
+                continue
+            cached_options = metadata.get("whisperOptions")
+            if isinstance(cached_options, dict) and all(
+                cached_options.get(name) == value for name, value in expected_options.items()
+            ):
+                return metadata
+        return None
+
     async def cached(self, source_url: str) -> list[dict[str, Any]]:
         try:
-            identity = await asyncio.to_thread(resolve_source_identity, source_url)
-            wanted_key = source_key(identity)
             normalized_url = normalize_url(source_url)
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
@@ -666,7 +713,7 @@ class JobManager:
                 metadata = json.loads(metadata_path.read_text())
             except json.JSONDecodeError:
                 continue
-            if metadata.get("sourceKey") == wanted_key or metadata.get("sourceUrl") == normalized_url:
+            if metadata.get("sourceUrl") == normalized_url:
                 entries.append(self.public_entry(metadata))
         return sorted(entries, key=lambda entry: entry["createdAt"], reverse=True)
 
