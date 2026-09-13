@@ -1,5 +1,6 @@
-import { Command, Message } from '@project/common';
-import { captureVisibleTab } from '../../services/capture-visible-tab';
+import type { Command, Message } from '@project/common';
+import { asbWarn } from '@project/common/util';
+import { captureVisibleTab } from '@project/extension/src/services/capture-visible-tab';
 
 export default class CaptureVisibleTabHandler {
     get sender() {
@@ -10,14 +11,24 @@ export default class CaptureVisibleTabHandler {
         return 'capture-visible-tab';
     }
 
-    handle(command: Command<Message>, sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) {
+    handle(command: Command<Message>, sender: Browser.runtime.MessageSender, sendResponse: (response?: any) => void) {
         if (sender.tab === undefined || sender.tab.id === undefined) {
             return;
         }
 
-        captureVisibleTab(sender.tab.id).then((dataUrl) => {
-            sendResponse(dataUrl);
-        });
+        void captureVisibleTab(sender.tab.id)
+            .then((dataUrl: string) => {
+                sendResponse(dataUrl);
+            })
+            .catch((e) => {
+                // It's normal to get here since the user might not have the activeTab permission
+                asbWarn(
+                    'background/capture-visible-tab',
+                    'failed to capture visible tab - responding with empty string',
+                    e
+                );
+                sendResponse('');
+            });
 
         return true;
     }

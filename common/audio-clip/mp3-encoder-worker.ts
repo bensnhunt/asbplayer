@@ -1,5 +1,5 @@
 import { WavHeader, Mp3Encoder } from 'lamejs';
-import { SerializableAudioBuffer } from './mp3-encoder';
+import type { SerializableAudioBuffer } from '@project/common/audio-clip/mp3-encoder';
 
 const samplesPerFrame = 1152;
 const bitRate = 192;
@@ -76,14 +76,14 @@ async function encode(audioBuffer: SerializableAudioBuffer) {
     const sampleRate = wav.header.sampleRate;
     const samples = wav.samples;
 
-    let left;
-    let right = null;
+    let left: Int16Array;
+    let right: Int16Array | null = null;
 
     if (channels === 1) {
         left = new Int16Array(samples);
     } else if (channels === 2) {
-        let leftSamples = [];
-        let rightSamples = [];
+        const leftSamples: number[] = [];
+        const rightSamples: number[] = [];
 
         for (let i = 0; i < samples.length; i += 2) {
             leftSamples.push(samples[i]);
@@ -96,13 +96,13 @@ async function encode(audioBuffer: SerializableAudioBuffer) {
         throw new Error('Unsupport number of channels ' + channels);
     }
 
-    const buffer = [];
+    const buffer: Int8Array[] = [];
     const encoder = new Mp3Encoder(channels, sampleRate, bitRate);
     let remaining = samples.length;
 
-    for (var i = 0; remaining >= samplesPerFrame; i += samplesPerFrame) {
+    for (let i = 0; remaining >= samplesPerFrame; i += samplesPerFrame) {
         const rightSubArray = right === null ? null : right.subarray(i, i + samplesPerFrame);
-        var mp3Buff = encoder.encodeBuffer(left.subarray(i, i + samplesPerFrame), rightSubArray);
+        const mp3Buff = encoder.encodeBuffer(left.subarray(i, i + samplesPerFrame), rightSubArray);
 
         if (mp3Buff.length > 0) {
             buffer.push(new Int8Array(mp3Buff));
@@ -120,9 +120,13 @@ async function encode(audioBuffer: SerializableAudioBuffer) {
     return buffer;
 }
 
-onmessage = async (e) => {
-    postMessage({
-        command: 'finished',
-        buffer: await encode(e.data.audioBuffer),
-    });
-};
+export function onMessage() {
+    onmessage = async (e) => {
+        postMessage({
+            command: 'finished',
+            buffer: await encode(e.data.audioBuffer),
+        });
+    };
+}
+
+onMessage();

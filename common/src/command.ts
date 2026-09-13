@@ -1,4 +1,4 @@
-import { Message, TabsMessage } from './message';
+import type { Message, TabsMessage } from '@project/common/src/message';
 
 export interface Command<T extends Message> {
     readonly sender: string;
@@ -73,6 +73,14 @@ export interface MobileOverlayToVideoCommand<T extends Message> extends Command<
     readonly src: string;
 }
 
+export interface StatisticsOverlayToTabCommand<T extends Message> extends Command<T> {
+    readonly sender: 'asbplayer-statistics-overlay-to-tab';
+}
+
+export interface StatisticsOverlayCommand<T extends Message> extends Command<T> {
+    readonly sender: 'asbplayer-statistics-overlay';
+}
+
 export interface VideoToMobileOverlayCommand<T extends Message> extends Command<T> {
     readonly sender: 'asbplayer-video-to-mobile-overlay';
     readonly src: string;
@@ -80,4 +88,8 @@ export interface VideoToMobileOverlayCommand<T extends Message> extends Command<
 
 export interface MobileOverlayCommand<T extends Message> extends Command<T> {
     readonly sender: 'asbplayer-mobile-overlay';
+}
+
+export interface DictionaryDBCommand<T extends Message> extends Command<T> {
+    readonly sender: 'asbplayer-dictionary';
 }

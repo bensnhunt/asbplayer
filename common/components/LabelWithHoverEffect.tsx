@@ -1,12 +1,13 @@
-import FormControlLabel from '@material-ui/core/FormControlLabel';
-import styled from '@material-ui/core/styles/styled';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import styled from '@mui/styles/styled';
+import type { Theme } from '@mui/material';
 
-const LabelWithHoverEffect = styled(FormControlLabel)(({ theme }) => ({
+const LabelWithHoverEffect = styled(FormControlLabel)<Theme>(({ theme }) => ({
     '&:hover .MuiSwitch-thumb': {
-        outline: `9px solid ${theme.palette.secondary.main}29`,
+        outline: `9px solid ${theme.palette.primary.main}29`,
     },
-    '&:hover .MuiRadio-colorSecondary': {
-        background: `${theme.palette.secondary.main}29`,
+    '&:hover .MuiRadio-colorPrimary': {
+        background: `${theme.palette.primary.main}29`,
     },
 }));
 

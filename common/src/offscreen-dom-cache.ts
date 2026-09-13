@@ -16,12 +16,34 @@ export default class OffscreenDomCache {
         this._empty = true;
     }
 
+    has(key: string) {
+        return this._cachedContentElements[key] !== undefined;
+    }
+
+    keys() {
+        return Object.keys(this._cachedContentElements);
+    }
+
     add(key: string, html: string) {
-        const cached = document.createElement('div');
+        let cached = this._cachedContentElements[key];
+        if (!cached) {
+            cached = document.createElement('div');
+            this._cachedContentElements[key] = cached;
+            this._offscreenElement().appendChild(cached);
+        }
         cached.innerHTML = `${html}\n`;
-        this._cachedContentElements[key] = cached;
-        this._offscreenElement().appendChild(cached);
         this._empty = false;
+    }
+
+    delete(key: string) {
+        const cached = this._cachedContentElements[key];
+        if (cached) {
+            cached.remove();
+            delete this._cachedContentElements[key];
+            if (Object.keys(this._cachedContentElements).length === 0) {
+                this.clear();
+            }
+        }
     }
 
     return(element: HTMLElement) {

@@ -1,43 +1,54 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-    Image,
-    ImageModel,
+import { asbError } from '@project/common/util';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type {
+    MediaFragmentModel,
     AudioModel,
     SubtitleModel,
     AnkiUiState,
+    AnkiUiInitialState,
     AnkiUiResumeState,
     AnkiUiSavedState,
     AnkiUiBridgeRerecordMessage,
     AnkiUiBridgeResumeMessage,
     AnkiUiBridgeRewindMessage,
     CopyToClipboardMessage,
-    AnkiSettingsToVideoMessage,
     Message,
     UpdateStateMessage,
     FileModel,
+    EncodeMp3Message,
+    AnkiDialogSettingsMessage,
+    ActiveProfileMessage,
+    AnkiDialogSettings,
+    AnkiUiBridgeExportedMessage,
+    AnkiDialogDismissedQuickSelectFtueMessage,
 } from '@project/common';
 import { createTheme } from '@project/common/theme';
-import { AnkiSettings } from '@project/common/settings';
-import ThemeProvider from '@material-ui/styles/ThemeProvider';
-import Alert, { Color } from '@material-ui/lab/Alert';
-import CssBaseline from '@material-ui/core/CssBaseline';
+import type { Profile } from '@project/common/settings';
+import ThemeProvider from '@mui/material/styles/ThemeProvider';
+import type { AlertColor } from '@mui/material/Alert';
+import Alert from '@mui/material/Alert';
+import CssBaseline from '@mui/material/CssBaseline';
 import AnkiDialog from '@project/common/components/AnkiDialog';
-import ImageDialog from '@project/common/components/ImageDialog';
-import Snackbar from '@material-ui/core/Snackbar';
-import Bridge from '../bridge';
-import { PaletteType } from '@material-ui/core';
-import { AnkiDialogState } from '@project/common/components/AnkiDialog';
-import { BridgeFetcher } from '../bridge-fetcher';
-import { Anki, ExportParams } from '@project/common/anki';
+import Snackbar from '@mui/material/Snackbar';
+import type Bridge from '@project/extension/src/ui/bridge';
+import type { PaletteMode } from '@mui/material/styles';
+import type { AnkiDialogState } from '@project/common/components/AnkiDialog';
+import { BridgeFetcher } from '@project/extension/src/ui/bridge-fetcher';
+import type { ExportParams } from '@project/common/anki';
+import { Anki } from '@project/common/anki';
+import { v4 as uuidv4 } from 'uuid';
+import { base64ToBlob, blobToBase64 } from '@project/common/base64';
+import { isMobile } from '@project/common/device-detection/mobile';
+import { StyledEngineProvider } from '@mui/material/styles';
+import LogoIcon from '@project/common/components/LogoIcon';
 
 interface Props {
     bridge: Bridge;
-    mp3WorkerUrl: string;
 }
 
 const blobToDataUrl = async (blob: Blob): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        var reader = new FileReader();
+    return new Promise((resolve) => {
+        const reader = new FileReader();
         reader.onload = () => {
             resolve(reader.result as string);
         };
@@ -45,7 +56,7 @@ const blobToDataUrl = async (blob: Blob): Promise<string> => {
     });
 };
 
-export default function AnkiUi({ bridge, mp3WorkerUrl }: Props) {
+export default function AnkiUi({ bridge }: Props) {
     const [open, setOpen] = useState<boolean>(false);
     const [disabled, setDisabled] = useState<boolean>(false);
     const [canRerecord, setCanRerecord] = useState<boolean>(false);
@@ -53,10 +64,8 @@ export default function AnkiUi({ bridge, mp3WorkerUrl }: Props) {
     const [surroundingSubtitles, setSurroundingSubtitles] = useState<SubtitleModel[]>();
     const [text, setText] = useState<string>();
     const [serializedAudio, setSerializedAudio] = useState<AudioModel>();
-    const [image, setImage] = useState<Image>();
-    const [serializedImage, setSerializedImage] = useState<ImageModel>();
+    const [serializedImage, setSerializedImage] = useState<MediaFragmentModel>();
     const [file, setFile] = useState<FileModel>();
-    const [imageDialogOpen, setImageDialogOpen] = useState<boolean>(false);
     const [source, setSource] = useState<string>('');
     const [url, setUrl] = useState<string>('');
     const [definition, setDefinition] = useState('');
@@ -67,19 +76,24 @@ export default function AnkiUi({ bridge, mp3WorkerUrl }: Props) {
     const [timestampBoundaryInterval, setTimestampBoundaryInterval] = useState<number[]>();
     const [lastAppliedTimestampIntervalToText, setLastAppliedTimestampIntervalToText] = useState<number[]>();
     const [lastAppliedTimestampIntervalToAudio, setLastAppliedTimestampIntervalToAudio] = useState<number[]>();
-    const [settingsProvider, setSettingsProvider] = useState<AnkiSettings>();
-    const [alertSeverity, setAlertSeverity] = useState<Color>('error');
+    const [settings, setSettings] = useState<AnkiDialogSettings>();
+    const [alertSeverity, setAlertSeverity] = useState<AlertColor>('error');
     const [alertOpen, setAlertOpen] = useState<boolean>(false);
     const [alert, setAlert] = useState<string>('');
-    const [themeType, setThemeType] = useState<string>('dark');
     const [dialogRequestedTimestamp, setDialogRequestedTimestamp] = useState<number>(0);
+    const [profiles, setProfiles] = useState<Profile[]>();
+    const [activeProfile, setActiveProfile] = useState<string>();
+    const [ftueHasSeenAnkiDialogQuickSelect, setFtueHasSeenAnkiDialogQuickSelect] = useState<boolean>();
+    const [inTutorial, setInTutorial] = useState<boolean>(false);
 
-    const theme = useMemo(() => createTheme(themeType as PaletteType), [themeType]);
+    const theme = useMemo(() => createTheme((settings?.themeType ?? 'dark') as PaletteMode), [settings?.themeType]);
     const anki = useMemo(
-        () => (settingsProvider ? new Anki(settingsProvider, new BridgeFetcher(bridge)) : undefined),
-        [settingsProvider, bridge]
+        () => (settings ? new Anki(settings, new BridgeFetcher(bridge)) : undefined),
+        [settings, bridge]
     );
-    const dialogStateRef = useRef<AnkiDialogState>();
+    const dialogStateRef = useRef<AnkiDialogState>(undefined);
+    const openCardSelectDialogActionRef = useRef<() => void>(undefined);
+    const [initialCardSelectDialogOpen, setInitialCardSelectDialogOpen] = useState<boolean>(false);
 
     const savedState = useCallback(() => {
         const dialogState = dialogStateRef.current!;
@@ -119,6 +133,10 @@ export default function AnkiUi({ bridge, mp3WorkerUrl }: Props) {
                 setInitialTimestampInterval(undefined);
                 setLastAppliedTimestampIntervalToText(undefined);
                 setLastAppliedTimestampIntervalToAudio(undefined);
+                if ((s as AnkiUiInitialState).cardSelectOpen) {
+                    openCardSelectDialogActionRef.current?.();
+                    setInitialCardSelectDialogOpen(true);
+                }
             } else if (s.type === 'resume') {
                 const state = s as AnkiUiResumeState;
                 setInitialTimestampInterval(state.initialTimestampInterval);
@@ -141,16 +159,18 @@ export default function AnkiUi({ bridge, mp3WorkerUrl }: Props) {
             setSerializedAudio(s.audio);
             setSerializedImage(s.image);
             setFile(s.file);
-            setImageDialogOpen(false);
             setDisabled(false);
-            setSettingsProvider(s.settingsProvider);
-            setImage(image);
-            setThemeType(s.themeType || 'dark');
+            setSettings(s.settings);
+            setActiveProfile(s.activeProfile);
+            setProfiles(s.profiles);
             setOpen(s.open);
+            setFtueHasSeenAnkiDialogQuickSelect(s.ftueHasSeenAnkiDialogQuickSelect);
+            setInTutorial(s.inTutorial);
         });
-    }, [bridge, image]);
+    }, [bridge]);
 
-    const mp3WorkerFactory = useMemo(() => () => new Worker(mp3WorkerUrl), [mp3WorkerUrl]);
+    useEffect(() => bridge.serverIsReady(), [bridge]);
+
     const handleProceed = useCallback(
         async (params: ExportParams) => {
             setDisabled(true);
@@ -158,9 +178,14 @@ export default function AnkiUi({ bridge, mp3WorkerUrl }: Props) {
             try {
                 await anki!.export(params);
 
+                const message: AnkiUiBridgeExportedMessage = {
+                    command: 'exported',
+                    mode: params.mode,
+                };
+                bridge.sendMessageFromServer(message);
+
                 if (params.mode !== 'gui') {
                     setOpen(false);
-                    setImageDialogOpen(false);
                     const message: AnkiUiBridgeResumeMessage = {
                         command: 'resume',
                         uiState: savedState(),
@@ -168,12 +193,18 @@ export default function AnkiUi({ bridge, mp3WorkerUrl }: Props) {
                     };
                     bridge.sendMessageFromServer(message);
                 }
+
+                if (params.mode === 'updateLast' || params.mode === 'updateSpecific') {
+                    bridge.sendMessageFromServer({ command: 'card-updated-dialog' });
+                } else if (params.mode === 'default') {
+                    bridge.sendMessageFromServer({ command: 'card-exported-dialog' });
+                }
             } catch (e) {
-                console.error(e);
+                asbError('anki/ui', e);
                 setAlertSeverity('error');
 
                 if (e instanceof Error) {
-                    setAlert((e as Error).message);
+                    setAlert(e.message);
                 } else {
                     setAlert(String(e));
                 }
@@ -188,33 +219,25 @@ export default function AnkiUi({ bridge, mp3WorkerUrl }: Props) {
 
     const handleCancel = useCallback(() => {
         setOpen(false);
-        setImageDialogOpen(false);
         const message: AnkiUiBridgeResumeMessage = { command: 'resume', uiState: savedState(), cardExported: false };
         bridge.sendMessageFromServer(message);
     }, [bridge, savedState]);
 
     const handleRewind = useCallback(() => {
         setOpen(false);
-        setImageDialogOpen(false);
         const message: AnkiUiBridgeRewindMessage = { command: 'rewind', uiState: savedState() };
         bridge.sendMessageFromServer(message);
     }, [bridge, savedState]);
 
-    const handleViewImage = useCallback((image: Image) => {
-        setImage(image);
-        setImageDialogOpen(true);
-    }, []);
-
     const handleRerecord = useCallback(() => {
         setOpen(false);
-        setImageDialogOpen(false);
 
         const state = savedState();
         const message: AnkiUiBridgeRerecordMessage = {
             command: 'rerecord',
             uiState: state,
-            recordStart: state.timestampInterval![0],
-            recordEnd: state.timestampInterval![1],
+            recordStart: state.timestampInterval[0],
+            recordEnd: state.timestampInterval[1],
         };
 
         bridge.sendMessageFromServer(message);
@@ -224,7 +247,23 @@ export default function AnkiUi({ bridge, mp3WorkerUrl }: Props) {
         bridge.sendMessageFromServer({ command: 'openSettings' });
     }, [bridge]);
 
-    const lastFocusOutRef = useRef<HTMLElement>();
+    const handleSetActiveProfile = useCallback(
+        (profile: string | undefined) => {
+            const message: ActiveProfileMessage = { command: 'activeProfile', profile: profile };
+            bridge.sendMessageFromServer(message);
+        },
+        [bridge]
+    );
+
+    const handleDismissShowQuickSelectFtue = useCallback(() => {
+        setFtueHasSeenAnkiDialogQuickSelect(true);
+        const message: AnkiDialogDismissedQuickSelectFtueMessage = {
+            command: 'dismissedQuickSelectFtue',
+        };
+        bridge.sendMessageFromServer(message);
+    }, [bridge]);
+
+    const lastFocusOutRef = useRef<HTMLElement>(undefined);
 
     const handleFocusOut = useCallback((event: FocusEvent) => {
         if (event.target instanceof HTMLElement) {
@@ -247,8 +286,11 @@ export default function AnkiUi({ bridge, mp3WorkerUrl }: Props) {
         return bridge.addClientMessageListener((message) => {
             if (message.command === 'focus') {
                 lastFocusOutRef.current?.focus();
-            } else if (message.command === 'ankiSettings') {
-                setSettingsProvider((message as AnkiSettingsToVideoMessage).value);
+            } else if (message.command === 'settings') {
+                const settingsMessage = message as AnkiDialogSettingsMessage;
+                setSettings(settingsMessage.settings);
+                setProfiles(settingsMessage.profiles);
+                setActiveProfile(settingsMessage.activeProfile);
             } else if (message.command === 'rewind') {
                 handleRewind();
             }
@@ -297,43 +339,72 @@ export default function AnkiUi({ bridge, mp3WorkerUrl }: Props) {
         customFieldValues,
     ]);
 
+    const mp3Encoder = useCallback(
+        async (blob: Blob, extension: string) => {
+            const encodeMp3Message: EncodeMp3Message = {
+                command: 'encode-mp3',
+                base64: await blobToBase64(blob),
+                extension,
+                messageId: uuidv4(),
+            };
+            const { base64 } = await bridge.sendMessageFromServerAndExpectResponse(encodeMp3Message, 60_000);
+            return base64ToBlob(base64, 'audio/mp3');
+        },
+        [bridge]
+    );
+
+    const showAnkiDialogQuickSelectFtue = !isMobile && ftueHasSeenAnkiDialogQuickSelect === false;
+
     return (
-        <ThemeProvider theme={theme}>
-            <CssBaseline />
-            <Snackbar
-                anchorOrigin={{ horizontal: 'center', vertical: 'top' }}
-                open={alertOpen}
-                autoHideDuration={5000}
-                onClose={() => setAlertOpen(false)}
-            >
-                <Alert onClose={() => setAlertOpen(false)} severity={alertSeverity}>
-                    {alert}
-                </Alert>
-            </Snackbar>
-            <ImageDialog open={imageDialogOpen} image={image} onClose={() => setImageDialogOpen(false)} />
-            {settingsProvider && card && anki && mp3WorkerFactory && (
-                <AnkiDialog
-                    open={open}
-                    disabled={disabled}
-                    card={card}
-                    settings={settingsProvider}
-                    anki={anki}
-                    onProceed={handleProceed}
-                    onRerecord={canRerecord ? handleRerecord : undefined}
-                    onCancel={handleCancel}
-                    onViewImage={handleViewImage}
-                    onOpenSettings={handleOpenSettings}
-                    onCopyToClipboard={handleCopyToClipboard}
-                    source={source}
-                    initialTimestampInterval={initialTimestampInterval}
-                    timestampBoundaryInterval={timestampBoundaryInterval}
-                    timestampInterval={timestampInterval}
-                    lastAppliedTimestampIntervalToText={lastAppliedTimestampIntervalToText}
-                    lastAppliedTimestampIntervalToAudio={lastAppliedTimestampIntervalToAudio}
-                    stateRef={dialogStateRef}
-                    mp3WorkerFactory={mp3WorkerFactory}
-                />
-            )}
-        </ThemeProvider>
+        <StyledEngineProvider injectFirst>
+            <ThemeProvider theme={theme}>
+                <CssBaseline />
+                <Snackbar
+                    anchorOrigin={{ horizontal: 'center', vertical: 'top' }}
+                    open={alertOpen}
+                    autoHideDuration={5000}
+                    onClose={() => setAlertOpen(false)}
+                >
+                    <Alert
+                        onClose={() => setAlertOpen(false)}
+                        severity={alertSeverity}
+                        icon={<LogoIcon fontSize="small" />}
+                    >
+                        {alert}
+                    </Alert>
+                </Snackbar>
+                {settings && card && anki && (
+                    <AnkiDialog
+                        open={open}
+                        disabled={disabled}
+                        card={card}
+                        settings={settings}
+                        profiles={profiles}
+                        activeProfile={activeProfile}
+                        onSetActiveProfile={handleSetActiveProfile}
+                        anki={anki}
+                        onProceed={handleProceed}
+                        onRerecord={canRerecord ? handleRerecord : undefined}
+                        onCancel={handleCancel}
+                        onOpenSettings={handleOpenSettings}
+                        onCopyToClipboard={handleCopyToClipboard}
+                        source={source}
+                        initialTimestampInterval={initialTimestampInterval}
+                        timestampBoundaryInterval={timestampBoundaryInterval}
+                        timestampInterval={timestampInterval}
+                        lastAppliedTimestampIntervalToText={lastAppliedTimestampIntervalToText}
+                        lastAppliedTimestampIntervalToAudio={lastAppliedTimestampIntervalToAudio}
+                        showQuickSelectFtue={showAnkiDialogQuickSelectFtue}
+                        onDismissShowQuickSelectFtue={handleDismissShowQuickSelectFtue}
+                        stateRef={dialogStateRef}
+                        openCardSelectDialogActionRef={openCardSelectDialogActionRef}
+                        initialCardSelectDialogOpen={initialCardSelectDialogOpen}
+                        mp3Encoder={mp3Encoder}
+                        lastSelectedExportMode={settings.lastSelectedAnkiExportMode}
+                        inTutorial={inTutorial}
+                    />
+                )}
+            </ThemeProvider>
+        </StyledEngineProvider>
     );
 }

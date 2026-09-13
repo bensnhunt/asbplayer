@@ -1,43 +1,63 @@
-import React, { useCallback, useEffect, useState, useRef, MutableRefObject } from 'react';
+import type { MutableRefObject } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { makeStyles, withStyles, useTheme } from '@material-ui/core/styles';
-import ArrowBackIcon from '@material-ui/icons/ArrowBack';
-import ArrowForwardIcon from '@material-ui/icons/ArrowForward';
-import CloseIcon from '@material-ui/icons/Close';
-import Fade from '@material-ui/core/Fade';
-import Grid from '@material-ui/core/Grid';
-import IconButton from '@material-ui/core/IconButton';
-import Input from '@material-ui/core/Input';
-import List from '@material-ui/core/List';
-import ListItem from '@material-ui/core/ListItem';
-import OpenInNewIcon from '@material-ui/icons/OpenInNew';
-import Popover from '@material-ui/core/Popover';
-import FullscreenIcon from '@material-ui/icons/Fullscreen';
-import AspectRatioIcon from '@material-ui/icons/AspectRatio';
-import FullscreenExitIcon from '@material-ui/icons/FullscreenExit';
-import PauseIcon from '@material-ui/icons/Pause';
-import PlayArrowIcon from '@material-ui/icons/PlayArrow';
-import QueueMusicIcon from '@material-ui/icons/QueueMusic';
-import Slider from '@material-ui/core/Slider';
-import TuneIcon from '@material-ui/icons/Tune';
-import SubtitlesIcon from '@material-ui/icons/Subtitles';
-import VerticalAlignTopIcon from '@material-ui/icons/VerticalAlignTop';
-import VerticalAlignBottomIcon from '@material-ui/icons/VerticalAlignBottom';
-import VideocamIcon from '@material-ui/icons/Videocam';
-import VolumeOffIcon from '@material-ui/icons/VolumeOff';
-import VolumeUpIcon from '@material-ui/icons/VolumeUp';
-import { AudioTrackModel, PlayMode, VideoTabModel } from '@project/common';
-import { SubtitleAlignment } from '@project/common/settings';
-import Clock from '../services/clock';
-import PlaybackPreferences from '../services/playback-preferences';
-import Tooltip from '@material-ui/core/Tooltip';
-import Menu from '@material-ui/core/Menu';
-import MenuItem from '@material-ui/core/MenuItem';
-import useMediaQuery from '@material-ui/core/useMediaQuery';
-import MoreVertIcon from '@material-ui/icons/MoreVert';
+import { makeStyles, withStyles } from '@mui/styles';
+import { useTheme } from '@mui/material/styles';
+import type { Theme } from '@mui/material';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import BlurOnIcon from '@mui/icons-material/BlurOn';
+import BlurOffIcon from '@mui/icons-material/BlurOff';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import CloseIcon from '@mui/icons-material/Close';
+import FolderIcon from '@mui/icons-material/Folder';
+import Fade from '@mui/material/Fade';
+import Grid from '@mui/material/Grid';
+import IconButton from '@mui/material/IconButton';
+import List from '@mui/material/List';
+import ListItem from '@mui/material/ListItem';
+import ListItemButton from '@mui/material/ListItemButton';
+import ListItemText from '@mui/material/ListItemText';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import Popover from '@mui/material/Popover';
+import FullscreenIcon from '@mui/icons-material/Fullscreen';
+import AspectRatioIcon from '@mui/icons-material/AspectRatio';
+import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
+import PauseIcon from '@mui/icons-material/Pause';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import QueueMusicIcon from '@mui/icons-material/QueueMusic';
+import Slider from '@mui/material/Slider';
+import TuneIcon from '@mui/icons-material/Tune';
+import SubtitlesIcon from '@mui/icons-material/Subtitles';
+import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
+import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
+import VideocamIcon from '@mui/icons-material/Videocam';
+import VolumeOffIcon from '@mui/icons-material/VolumeOff';
+import VolumeUpIcon from '@mui/icons-material/VolumeUp';
+import type { AudioTrackModel, PlayMode, VideoTabModel } from '@project/common';
+import type { SubtitleAlignment } from '@project/common/settings';
+import type Clock from '@project/common/playback/timing/clock';
+import type PlaybackPreferenceController from '@project/common/playback/controllers/playback-preference-controller';
+import Tooltip from '@project/common/components/Tooltip';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 import { isMobile } from 'react-device-detect';
-import SubtitleOffsetInput from './SubtitleOffsetInput';
-const useControlStyles = makeStyles((theme) => ({
+import SubtitleOffsetInput from '@project/common/components/SubtitleOffsetInput';
+import PlaybackRateInput from '@project/common/components/PlaybackRateInput';
+import VideoElementFavicon from '@project/common/app/components/VideoElementFavicon';
+import PlayModeSelector from '@project/common/components/PlayModeSelector';
+import TimeDisplay from '@project/common/components/TimeDisplay';
+import {
+    centeredProgressBarPreviewLeft,
+    clampProgressBarPreviewLeft,
+    formatProgressTimestamp,
+    progressBarProgress,
+    progressBarTrackWidth,
+} from '@project/common/app/components/progress-bar';
+import LoadSubtitlesIcon from '@project/common/components/LoadSubtitlesIcon';
+
+const useControlStyles = makeStyles<Theme>((theme) => ({
     container: {
         position: 'absolute',
         left: '50%',
@@ -48,17 +68,6 @@ const useControlStyles = makeStyles((theme) => ({
     },
     buttonContainer: {
         flexDirection: 'row',
-    },
-    timeDisplay: {
-        color: '#fff',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        height: '100%',
-        cursor: 'default',
-        fontSize: 20,
-        marginLeft: 10,
-        whiteSpace: 'nowrap',
     },
     numberInput: {
         height: '100%',
@@ -93,6 +102,7 @@ const useControlStyles = makeStyles((theme) => ({
             duration: theme.transitions.duration.short,
         }),
         width: 0,
+        opacity: 0,
         pointerEvents: 'auto',
     },
     volumeInputShown: {
@@ -101,6 +111,7 @@ const useControlStyles = makeStyles((theme) => ({
             duration: theme.transitions.duration.short,
         }),
         width: 100,
+        opacity: 1,
         pointerEvents: 'auto',
     },
     volumeInputThumbHidden: {
@@ -112,6 +123,22 @@ const useControlStyles = makeStyles((theme) => ({
         pointerEvents: 'auto',
     },
     volumeInputThumbShown: {
+        transition: theme.transitions.create('visibility', {
+            easing: theme.transitions.easing.easeOut,
+            duration: theme.transitions.duration.short,
+        }),
+        opacity: 1,
+        pointerEvents: 'auto',
+    },
+    volumeInputRailHidden: {
+        transition: theme.transitions.create('visibility', {
+            easing: theme.transitions.easing.sharp,
+            duration: theme.transitions.duration.short,
+        }),
+        opacity: 0,
+        pointerEvents: 'auto',
+    },
+    volumeInputRailShown: {
         transition: theme.transitions.create('visibility', {
             easing: theme.transitions.easing.easeOut,
             duration: theme.transitions.duration.short,
@@ -150,9 +177,10 @@ const useControlStyles = makeStyles((theme) => ({
     },
 }));
 
-const useProgressBarStyles = makeStyles((theme) => ({
+const useProgressBarStyles = makeStyles<Theme>((theme) => ({
     root: {
         height: 10,
+        position: 'relative',
     },
     container: {
         height: 10,
@@ -171,6 +199,43 @@ const useProgressBarStyles = makeStyles((theme) => ({
         pointerEvents: 'auto',
         position: 'absolute',
         width: '100%',
+    },
+    preview: {
+        position: 'absolute',
+        backgroundColor: 'grey',
+        borderRadius: 5,
+        height: 79,
+        top: -90,
+        zIndex: -1,
+    },
+    thumbnail: {
+        height: 79,
+        borderRadius: 5,
+    },
+    timestampPreview: {
+        position: 'absolute',
+        top: -36,
+        height: 24,
+        padding: '1px 8px',
+        boxSizing: 'border-box',
+        border: '1px solid rgba(255, 255, 255, 0.16)',
+        borderRadius: 5,
+        backgroundColor: 'rgba(24, 24, 24, 0.94)',
+        color: '#fff',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 13,
+        fontWeight: 600,
+        fontVariantNumeric: 'tabular-nums',
+        letterSpacing: 0,
+        whiteSpace: 'nowrap',
+        pointerEvents: 'none',
+        zIndex: 2,
+        boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)',
+    },
+    timestampPreviewWithThumbnail: {
+        top: -120,
     },
     fillContainer: {
         background: 'rgba(30,30,30,0.7)',
@@ -215,7 +280,7 @@ const useProgressBarStyles = makeStyles((theme) => ({
     },
 }));
 
-const VolumeSlider = withStyles((theme) => ({
+const VolumeSlider = withStyles(() => ({
     root: {
         color: 'white',
         verticalAlign: 'middle',
@@ -235,13 +300,6 @@ const VolumeSlider = withStyles((theme) => ({
     },
 }))(Slider);
 
-function displayTime(milliseconds: number) {
-    const seconds = Math.floor(milliseconds / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const secondsInMinute = seconds % 60;
-    return String(minutes) + ':' + String(secondsInMinute).padStart(2, '0');
-}
-
 function elementWidth(element: HTMLElement) {
     const rect = element.getBoundingClientRect();
     return rect.right - rect.left;
@@ -249,28 +307,83 @@ function elementWidth(element: HTMLElement) {
 
 interface ProgressBarProps {
     onSeek: (progress: number) => void;
+    onSeekPreview?: (progress: number) => string | undefined;
     value: number;
+    length: number;
+    videoHeight: number | undefined;
+    videoWidth: number | undefined;
+    previewEnabled: boolean;
+    timestampPreviewEnabled: boolean;
 }
 
-function ProgressBar({ onSeek, value }: ProgressBarProps) {
+function ProgressBar({
+    onSeek,
+    onSeekPreview,
+    value,
+    length,
+    videoHeight,
+    videoWidth,
+    previewEnabled,
+    timestampPreviewEnabled,
+}: ProgressBarProps) {
     const classes = useProgressBarStyles();
     const [mouseOver, setMouseOver] = useState(false);
-    const containerRef = useRef(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [hoverState, setHoverState] = useState({ progress: 0, trackWidth: 0 });
+    // x position of mouse
+    const [hoverX, setHoverX] = useState(0);
+    const [thumbnailSrc, setThumbnailSrc] = useState<string | undefined>(undefined);
+
+    // calculate width of thumbnail based on aspect ratio of video
+    if (videoHeight && videoWidth) {
+        videoWidth = Math.round((videoWidth / videoHeight) * 79);
+    }
+
+    const thumbnailPreviewEnabled = previewEnabled && onSeekPreview !== undefined;
+    const thumbnailWidth = videoWidth ?? 145;
+    const timestampPreviewWidth = length >= 3600000 ? 88 : 64;
+    const hoverTimestamp = timestampPreviewEnabled ? formatProgressTimestamp(hoverState.progress, length) : undefined;
+    const timestampPreviewClassName = thumbnailPreviewEnabled
+        ? classes.timestampPreview + ' ' + classes.timestampPreviewWithThumbnail
+        : classes.timestampPreview;
+    const timestampPreviewLeft = thumbnailPreviewEnabled
+        ? clampProgressBarPreviewLeft(
+              hoverX + (thumbnailWidth - timestampPreviewWidth) / 2,
+              hoverState.trackWidth,
+              timestampPreviewWidth
+          )
+        : centeredProgressBarPreviewLeft(hoverState.progress, hoverState.trackWidth, timestampPreviewWidth);
 
     const handleClick = useCallback(
         (e: React.MouseEvent<HTMLDivElement>) => {
             const rect = e.currentTarget.getBoundingClientRect();
-            // Account for margins by subtracting 10 from left/right sides
-            const width = rect.right - rect.left - 20;
-            const progress = Math.min(1, Math.max(0, (e.pageX - rect.left - 10) / width));
-            onSeek(progress);
+            onSeek(progressBarProgress(e.pageX, rect));
         },
         [onSeek]
     );
 
-    const handleMouseOver = useCallback(() => setMouseOver(true), []);
+    const handleMouseOver = useCallback(
+        (e: React.MouseEvent<HTMLDivElement>) => {
+            setMouseOver(true);
+            const rect = e.currentTarget.getBoundingClientRect();
+            const trackWidth = progressBarTrackWidth(rect);
+            const progress = progressBarProgress(e.pageX, rect);
+            setHoverState({ progress, trackWidth });
+            // subtract to center the mouse in the center of the preview box
+            setHoverX(progress * trackWidth - 145 / 2 + 10);
+
+            if (onSeekPreview == undefined) return;
+            const previewSrc = onSeekPreview(progress);
+            if (previewSrc) {
+                setThumbnailSrc(previewSrc);
+            }
+        },
+        [onSeekPreview]
+    );
+
     const handleMouseOut = useCallback(() => setMouseOver(false), []);
-    const progressWidth = containerRef.current ? (elementWidth(containerRef.current) * value) / 100 : 0;
+    const progressWidth =
+        Number.isFinite(value) && containerRef.current ? (elementWidth(containerRef.current) * value) / 100 : 0;
     const fillStyle = { width: progressWidth };
     const handleStyle = { marginLeft: progressWidth };
     const fillContainerClassName = mouseOver
@@ -280,6 +393,26 @@ function ProgressBar({ onSeek, value }: ProgressBarProps) {
 
     return (
         <div className={classes.root}>
+            {mouseOver && hoverTimestamp && (
+                <div
+                    aria-hidden="true"
+                    style={{
+                        left: timestampPreviewLeft,
+                        width: timestampPreviewWidth,
+                    }}
+                    className={timestampPreviewClassName}
+                >
+                    {hoverTimestamp}
+                </div>
+            )}
+            {mouseOver && (
+                <div
+                    style={{ left: hoverX, width: videoWidth ?? 145, display: previewEnabled ? 'block' : 'none' }}
+                    className={classes.preview}
+                >
+                    <img src={thumbnailSrc} className={classes.thumbnail} style={{ width: videoWidth ?? 145 }} />
+                </div>
+            )}
             <div ref={containerRef} className={classes.container}>
                 <div className={fillContainerClassName}>
                     <div className={classes.fill} style={fillStyle}></div>
@@ -291,7 +424,7 @@ function ProgressBar({ onSeek, value }: ProgressBarProps) {
             <div
                 className={classes.mouseEventListener}
                 onClick={handleClick}
-                onMouseOver={handleMouseOver}
+                onMouseMove={handleMouseOver}
                 onMouseOut={handleMouseOut}
             ></div>
         </div>
@@ -321,13 +454,12 @@ function AudioTrackSelector({
 
     const list = audioTracks.map((t) => {
         return (
-            <ListItem
-                key={t.id}
-                selected={t.id === selectedAudioTrack}
-                button
-                onClick={() => onAudioTrackSelected(t.id)}
-            >
-                {t.language} {t.label}
+            <ListItem key={t.id} disablePadding onClick={() => onAudioTrackSelected(t.id)}>
+                <ListItemButton selected={t.id === selectedAudioTrack}>
+                    <ListItemText>
+                        {t.language} {t.label}
+                    </ListItemText>
+                </ListItemButton>
             </ListItem>
         );
     });
@@ -370,13 +502,10 @@ function TabSelector({ open, anchorEl, onClose, tabs, selectedTab, onTabSelected
 
     const list = tabs.map((t) => {
         return (
-            <ListItem
-                key={`${t.id}:${t.src}`}
-                selected={selectedTab && t.id === selectedTab.id && t.src === selectedTab.src}
-                button
-                onClick={() => onTabSelected(t)}
-            >
-                {t.id} {t.title} {t.src}
+            <ListItem key={`${t.id}:${t.src}`} disablePadding onClick={() => onTabSelected(t)}>
+                <ListItemButton selected={selectedTab && t.id === selectedTab.id && t.src === selectedTab.src}>
+                    <VideoElementFavicon videoElement={t} /> {t.title}
+                </ListItemButton>
             </ListItem>
         );
     });
@@ -398,103 +527,6 @@ function TabSelector({ open, anchorEl, onClose, tabs, selectedTab, onTabSelected
                 }}
             >
                 <List>{list}</List>
-            </Popover>
-        </div>
-    );
-}
-
-interface MediaUnloaderProps {
-    open: boolean;
-    anchorEl?: Element;
-    file?: string;
-    onUnload: () => void;
-    onClose: () => void;
-}
-
-function MediaUnloader({ open, anchorEl, onUnload, onClose, file }: MediaUnloaderProps) {
-    return (
-        <div>
-            <Popover
-                disableEnforceFocus={true}
-                open={open}
-                anchorEl={anchorEl}
-                onClose={onClose}
-                anchorOrigin={{
-                    vertical: 'top',
-                    horizontal: 'center',
-                }}
-                transformOrigin={{
-                    vertical: 'bottom',
-                    horizontal: 'center',
-                }}
-            >
-                <List>
-                    <ListItem button onClick={(e) => onUnload()}>
-                        Unload {file}
-                    </ListItem>
-                </List>
-            </Popover>
-        </div>
-    );
-}
-
-interface PlayModeSelectorProps {
-    open: boolean;
-    anchorEl?: Element;
-    selectedPlayMode?: PlayMode;
-    onPlayMode: (playMode: PlayMode) => void;
-    onClose: () => void;
-}
-
-function PlayModeSelector({ open, anchorEl, selectedPlayMode, onPlayMode, onClose }: PlayModeSelectorProps) {
-    const { t } = useTranslation();
-
-    return (
-        <div>
-            <Popover
-                disableEnforceFocus={true}
-                open={open}
-                anchorEl={anchorEl}
-                onClose={onClose}
-                anchorOrigin={{
-                    vertical: 'top',
-                    horizontal: 'center',
-                }}
-                transformOrigin={{
-                    vertical: 'bottom',
-                    horizontal: 'center',
-                }}
-            >
-                <List>
-                    <ListItem
-                        selected={selectedPlayMode === PlayMode.normal}
-                        button
-                        onClick={(e) => onPlayMode(PlayMode.normal)}
-                    >
-                        {t('controls.normalMode')}
-                    </ListItem>
-                    <ListItem
-                        selected={selectedPlayMode === PlayMode.condensed}
-                        button
-                        onClick={(e) => onPlayMode(PlayMode.condensed)}
-                    >
-                        {t('controls.condensedMode')}
-                    </ListItem>
-                    <ListItem
-                        selected={selectedPlayMode === PlayMode.fastForward}
-                        button
-                        onClick={(e) => onPlayMode(PlayMode.fastForward)}
-                    >
-                        {t('controls.fastForwardMode')}
-                    </ListItem>
-                    <ListItem
-                        selected={selectedPlayMode === PlayMode.autoPause}
-                        button
-                        onClick={(e) => onPlayMode(PlayMode.autoPause)}
-                    >
-                        {t('controls.autoPauseMode')}
-                    </ListItem>
-                </List>
             </Popover>
         </div>
     );
@@ -565,27 +597,27 @@ interface ControlsProps {
     playbackRateEnabled?: boolean;
     onAudioTrackSelected: (id: string) => void;
     onSeek: (progress: number) => void;
-    mousePositionRef: MutableRefObject<Point>;
+    onSeekPreview?: (progress: number) => string | undefined;
+    mousePositionRef: MutableRefObject<Point | undefined>;
     onShow?: (show: boolean) => void;
     onPause: () => void;
     onPlay: () => void;
     onTabSelected?: (tab: VideoTabModel) => void;
-    onUnloadVideo?: () => void;
     onOffsetChange: (offset: number) => void;
     onPlaybackRateChange: (playbackRate: number) => void;
     onVolumeChange?: (volume: number) => void;
     disableKeyEvents?: boolean;
-    playbackPreferences: PlaybackPreferences;
+    playbackPreferences: PlaybackPreferenceController;
     closeEnabled?: boolean;
     onClose?: () => void;
     volumeEnabled?: boolean;
-    playMode?: PlayMode;
+    playModes?: Set<PlayMode>;
+    previewEnabled: boolean;
     playModeEnabled?: boolean;
     onPlayMode?: (playMode: PlayMode) => void;
     subtitlesEnabled?: boolean;
     subtitlesToggle?: boolean;
     onSubtitlesToggle?: () => void;
-    videoFile?: string;
     audioTracks?: AudioTrackModel[];
     selectedAudioTrack?: string;
     tabs?: VideoTabModel[];
@@ -606,6 +638,14 @@ interface ControlsProps {
     subtitleAlignmentEnabled?: boolean;
     subtitleAlignment?: SubtitleAlignment;
     onSubtitleAlignment?: (alignment: SubtitleAlignment) => void;
+    hideToolbar?: boolean;
+    onLoadFiles?: () => void;
+    onLoadSubtitles?: () => void;
+    blurOverlayEnabled?: boolean;
+    onBlurOverlayToggle?: () => void;
+    videoWidth?: number | undefined;
+    videoHeight?: number | undefined;
+    timestampPreviewEnabled?: boolean;
 }
 
 export default function Controls({
@@ -618,12 +658,12 @@ export default function Controls({
     playbackRateEnabled,
     onAudioTrackSelected,
     onSeek,
+    onSeekPreview,
     mousePositionRef,
     onShow,
     onPause,
     onPlay,
     onTabSelected,
-    onUnloadVideo,
     onOffsetChange,
     onPlaybackRateChange,
     onVolumeChange,
@@ -632,13 +672,12 @@ export default function Controls({
     closeEnabled,
     onClose,
     volumeEnabled,
-    playMode,
+    playModes,
     playModeEnabled,
     onPlayMode,
     subtitlesEnabled,
     subtitlesToggle,
     onSubtitlesToggle,
-    videoFile,
     audioTracks,
     selectedAudioTrack,
     tabs,
@@ -659,6 +698,15 @@ export default function Controls({
     subtitleAlignment,
     subtitleAlignmentEnabled,
     onSubtitleAlignment,
+    hideToolbar,
+    onLoadFiles,
+    onLoadSubtitles,
+    blurOverlayEnabled,
+    onBlurOverlayToggle,
+    videoWidth,
+    videoHeight,
+    previewEnabled,
+    timestampPreviewEnabled = false,
 }: ControlsProps) {
     const classes = useControlStyles();
     const { t } = useTranslation();
@@ -667,8 +715,6 @@ export default function Controls({
     const [audioTrackSelectorAnchorEl, setAudioTrackSelectorAnchorEl] = useState<Element>();
     const [tabSelectorOpen, setTabSelectorOpen] = useState<boolean>(false);
     const [tabSelectorAnchorEl, setTabSelectorAnchorEl] = useState<Element>();
-    const [videoUnloaderOpen, setVideoUnloaderOpen] = useState<boolean>(false);
-    const [videoUnloaderAnchorEl, setVideoUnloaderAnchorEl] = useState<Element>();
     const [playModeSelectorOpen, setPlayModeSelectorOpen] = useState<boolean>(false);
     const [playModeSelectorAnchorEl, setPlayModeSelectorAnchorEl] = useState<Element>();
     const [showVolumeBar, setShowVolumeBar] = useState<boolean>(false);
@@ -676,16 +722,14 @@ export default function Controls({
     const [lastCommittedVolume, setLastCommittedVolume] = useState<number>(100);
     const theme = useTheme();
     const isReallySmallScreen = useMediaQuery(theme.breakpoints.down(380));
-    const lastMousePositionRef = useRef<Point>({ x: 0, y: 0 });
+    const lastMousePositionRef = useRef<Point | undefined>(undefined);
     const lastShowTimestampRef = useRef<number>(Date.now());
     const lastNumberInputChangeTimestampRef = useRef<number>(Date.now());
     const lastShowRef = useRef<boolean>(true);
     const forceShowRef = useRef<boolean>(false);
-    const [playbackRateInputWidth, setPlaybackRateInputWidth] = useState<number>(5);
-    const offsetInputRef = useRef<HTMLInputElement>();
-    const playbackRateInputRef = useRef<HTMLInputElement>();
+    const offsetInputRef = useRef<HTMLInputElement>(undefined);
+    const playbackRateInputRef = useRef<HTMLInputElement>(undefined);
     const containerRef = useRef<HTMLDivElement>(null);
-    const closeButtonRef = useRef<HTMLButtonElement>(null);
     const [, updateState] = useState<any>();
     const forceUpdate = useCallback(() => updateState({}), []);
 
@@ -716,12 +760,14 @@ export default function Controls({
 
     const [playing, setPlaying] = useState<boolean>(clock.running);
     useEffect(() => {
-        clock.onEvent('start', () => setPlaying(true));
+        const remove = clock.onEvent('start', () => setPlaying(true));
         setPlaying(clock.running);
+        return remove;
     }, [clock]);
     useEffect(() => {
-        clock.onEvent('stop', () => setPlaying(false));
+        const remove = clock.onEvent('stop', () => setPlaying(false));
         setPlaying(clock.running);
+        return remove;
     }, [clock]);
 
     useEffect(() => {
@@ -731,15 +777,17 @@ export default function Controls({
             if (showOnMouseMovement) {
                 currentShow =
                     Date.now() - lastShowTimestampRef.current < 2000 ||
-                    Math.pow(mousePositionRef.current.x - lastMousePositionRef.current.x, 2) +
-                        Math.pow(mousePositionRef.current.y - lastMousePositionRef.current.y, 2) >
-                        100;
+                    (mousePositionRef.current !== undefined &&
+                        lastMousePositionRef.current !== undefined &&
+                        Math.pow(mousePositionRef.current.x - lastMousePositionRef.current.x, 2) +
+                            Math.pow(mousePositionRef.current.y - lastMousePositionRef.current.y, 2) >
+                            100);
             } else {
                 currentShow =
-                    ((containerRef.current && mousePositionRef.current.y > containerRef.current.offsetTop - 20) ||
-                        (closeButtonRef.current &&
-                            mousePositionRef.current.y < closeButtonRef.current.offsetHeight + 20)) ??
-                    false;
+                    mousePositionRef.current !== undefined &&
+                    ((containerRef.current !== null &&
+                        mousePositionRef.current.y > containerRef.current.offsetTop - 20) ||
+                        mousePositionRef.current.y < 70);
             }
 
             currentShow =
@@ -758,28 +806,12 @@ export default function Controls({
             }
 
             lastShowRef.current = currentShow;
-            lastMousePositionRef.current.x = mousePositionRef.current.x;
-            lastMousePositionRef.current.y = mousePositionRef.current.y;
+            lastMousePositionRef.current = { x: mousePositionRef.current?.x ?? 0, y: mousePositionRef.current?.y ?? 0 };
         }, 100);
         return () => clearInterval(interval);
     }, [mousePositionRef, showOnMouseMovement, playing]);
 
     useEffect(() => onShow?.(show), [onShow, show]);
-
-    const updatePlaybackRate = useCallback((playbackRate: number) => {
-        if (playbackRateInputRef.current) {
-            if (playbackRate === 1) {
-                playbackRateInputRef.current.value = '';
-                setPlaybackRateInputWidth(5);
-            } else {
-                const value = '×' + String(playbackRate.toFixed(2));
-                playbackRateInputRef.current.value = value;
-                lastNumberInputChangeTimestampRef.current = Date.now();
-                setPlaybackRateInputWidth(value.length);
-            }
-            playbackRateInputRef.current.blur();
-        }
-    }, []);
 
     const handleOffsetChange = useCallback(
         (offset: number) => {
@@ -789,60 +821,17 @@ export default function Controls({
         [onOffsetChange]
     );
 
-    const tryApplyPlaybackRate = useCallback(
-        (revertOnFailure: boolean) => {
-            if (!playbackRateInputRef.current) {
-                return;
-            }
-            const newPlaybackRate = Number(playbackRateInputRef.current.value);
-
-            if (playbackRate === newPlaybackRate) {
-                updatePlaybackRate(playbackRate);
-                return;
-            }
-
-            if (Number.isNaN(newPlaybackRate) || newPlaybackRate < 0.1 || newPlaybackRate > 5) {
-                if (revertOnFailure) {
-                    updatePlaybackRate(playbackRate);
-                }
-
-                return;
-            }
-
-            onPlaybackRateChange(newPlaybackRate);
+    const handlePlaybackRateChange = useCallback(
+        (playbackRate: number) => {
+            lastNumberInputChangeTimestampRef.current = Date.now();
+            onPlaybackRateChange(playbackRate);
         },
-        [onPlaybackRateChange, updatePlaybackRate, playbackRate]
+        [onPlaybackRateChange]
     );
 
     useEffect(() => {
-        if (disableKeyEvents) {
-            return;
-        }
-
-        function handleKey(event: KeyboardEvent) {
-            if (event.key === 'Enter') {
-                tryApplyPlaybackRate(false);
-            }
-        }
-
-        window.addEventListener('keydown', handleKey);
-
-        return () => {
-            window.removeEventListener('keydown', handleKey);
-        };
-    }, [tryApplyPlaybackRate, playbackRate, disableKeyEvents]);
-
-    const handleNumberInputClicked = useCallback((e: React.MouseEvent<HTMLInputElement>) => {
-        const inputElement = e.target as HTMLInputElement;
-        inputElement.setSelectionRange(0, inputElement.value?.length || 0);
-    }, []);
-
-    const handleNumberInputDeselected = useCallback(() => {
-        tryApplyPlaybackRate(true);
-    }, [tryApplyPlaybackRate]);
-
-    useEffect(() => {
-        clock.onEvent('settime', () => forceUpdate());
+        const remove = clock.onEvent('settime', () => forceUpdate());
+        return remove;
     }, [clock, forceUpdate]);
 
     useEffect(() => {
@@ -853,10 +842,6 @@ export default function Controls({
         const interval = setInterval(() => forceUpdate(), 100);
         return () => clearInterval(interval);
     }, [show, playing, forceUpdate]);
-
-    useEffect(() => {
-        updatePlaybackRate(playbackRate);
-    }, [playbackRate, updatePlaybackRate]);
 
     const handleAudioTrackSelectorClosed = useCallback(() => {
         setAudioTrackSelectorAnchorEl(undefined);
@@ -896,27 +881,12 @@ export default function Controls({
         [onTabSelected]
     );
 
-    const handleVideoUnloaderClosed = useCallback(() => {
-        setVideoUnloaderAnchorEl(undefined);
-        setVideoUnloaderOpen(false);
-    }, []);
-
-    const handleVideoUnloaderOpened = useCallback((e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
-        setVideoUnloaderAnchorEl(e.currentTarget);
-        setVideoUnloaderOpen(true);
-    }, []);
-
-    const handleUnloadVideo = useCallback(() => {
-        onUnloadVideo?.();
-        setVideoUnloaderOpen(false);
-    }, [onUnloadVideo]);
-
     const handlePlayModeSelectorClosed = useCallback(() => {
         setPlayModeSelectorAnchorEl(undefined);
         setPlayModeSelectorOpen(false);
     }, []);
 
-    const handlePlayModeSelectorOpened = useCallback((e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
+    const handlePlayModeSelectorClicked = useCallback((e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
         setPlayModeSelectorAnchorEl(e.currentTarget);
         setPlayModeSelectorOpen(true);
     }, []);
@@ -924,8 +894,6 @@ export default function Controls({
     const handlePlayModeSelected = useCallback(
         (playMode: PlayMode) => {
             onPlayMode?.(playMode);
-            setPlayModeSelectorAnchorEl(undefined);
-            setPlayModeSelectorOpen(false);
         },
         [onPlayMode]
     );
@@ -934,7 +902,7 @@ export default function Controls({
     const handleVolumeMouseOver = useCallback(() => setShowVolumeBar(true), []);
 
     const handleVolumeChange = useCallback(
-        (e: React.ChangeEvent<{}>, value: number | number[]) => {
+        (_: Event, value: number | number[]) => {
             if (typeof value !== 'number') {
                 return;
             }
@@ -946,7 +914,7 @@ export default function Controls({
     );
 
     const handleVolumeChangeCommitted = useCallback(
-        (e: React.ChangeEvent<{}>, value: number | number[]) => {
+        (_: Event | React.SyntheticEvent, value: number | number[]) => {
             if (typeof value !== 'number') {
                 return;
             }
@@ -977,17 +945,16 @@ export default function Controls({
         onSubtitleAlignment(newAlignment);
     }, [subtitleAlignment, subtitleAlignmentEnabled, onSubtitleAlignment]);
 
-    const progress = clock.progress(length);
+    const progress = clock.progress({ durationMs: length });
 
     return (
         <React.Fragment>
             <Fade in={show} timeout={200}>
                 <Grid container style={{ position: 'absolute', top: 0 }}>
-                    <Grid item style={{ flexGrow: 1 }}>
+                    <Grid item>
                         {closeEnabled && (
-                            <Tooltip title={t('controls.unloadVideo')!}>
+                            <Tooltip title={t('controls.unloadVideo')}>
                                 <IconButton
-                                    ref={closeButtonRef}
                                     color="inherit"
                                     className={classes.topButton}
                                     onClick={onClose}
@@ -999,9 +966,23 @@ export default function Controls({
                             </Tooltip>
                         )}
                     </Grid>
+                    {onLoadFiles && (
+                        <Grid item>
+                            <IconButton
+                                color="inherit"
+                                className={classes.topButton}
+                                onClick={onLoadFiles}
+                                onMouseOver={handleMouseOver}
+                                onMouseOut={handleMouseOut}
+                            >
+                                <FolderIcon />
+                            </IconButton>
+                        </Grid>
+                    )}
+                    <Grid item style={{ flexGrow: 1 }} />
                     <Grid item>
                         {theaterModeToggleEnabled && (
-                            <Tooltip title={t('controls.toggleTheaterMode')!}>
+                            <Tooltip title={t('controls.toggleTheaterMode')}>
                                 <IconButton
                                     color="inherit"
                                     className={theaterModeEnabled ? classes.topButton : classes.inactiveTopButton}
@@ -1013,12 +994,23 @@ export default function Controls({
                                 </IconButton>
                             </Tooltip>
                         )}
+                        {fullscreenEnabled && (
+                            <Tooltip title={t('controls.toggleFullscreen')}>
+                                <IconButton color="inherit" onClick={onFullscreenToggle}>
+                                    {fullscreen ? (
+                                        <FullscreenExitIcon className={classes.topButton} />
+                                    ) : (
+                                        <FullscreenIcon className={classes.topButton} />
+                                    )}
+                                </IconButton>
+                            </Tooltip>
+                        )}
                         {hideSubtitlePlayerToggleEnabled && (
                             <Tooltip
                                 title={
                                     subtitlePlayerHidden
-                                        ? t('controls.showSubtitlePlayer')!
-                                        : t('controls.hideSubtitlePlayer')!
+                                        ? t('controls.showSubtitlePlayer')
+                                        : t('controls.hideSubtitlePlayer')
                                 }
                             >
                                 <IconButton
@@ -1043,175 +1035,196 @@ export default function Controls({
             >
                 <Fade in={show} timeout={200}>
                     <div className={classes.subContainer}>
-                        <ProgressBar onSeek={handleSeek} value={progress * 100} />
-                        <Grid container className={classes.gridContainer} direction="row" wrap="nowrap">
-                            <Grid item>
-                                <IconButton color="inherit" onClick={() => (playing ? onPause() : onPlay())}>
-                                    {playing ? (
-                                        <PauseIcon className={classes.button} />
-                                    ) : (
-                                        <PlayArrowIcon className={classes.button} />
-                                    )}
-                                </IconButton>
-                            </Grid>
-                            {volumeEnabled && (
-                                <Grid
-                                    item
-                                    onMouseOver={handleVolumeMouseOver}
-                                    onMouseOut={handleVolumeMouseOut}
-                                    className={
-                                        showVolumeBar
-                                            ? classes.volumeInputContainerShown
-                                            : classes.volumeInputContainerHidden
-                                    }
-                                >
-                                    <Grid container spacing={0} direction="row" wrap="nowrap">
-                                        <Grid item>
-                                            <IconButton color="inherit" onClick={handleVolumeToggle}>
-                                                {volume === 0 ? <VolumeOffIcon /> : <VolumeUpIcon />}
-                                            </IconButton>
-                                        </Grid>
-                                        <Grid
-                                            item
-                                            style={{
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                justifyContent: 'center',
-                                            }}
-                                        >
-                                            <VolumeSlider
-                                                onChange={handleVolumeChange}
-                                                onChangeCommitted={handleVolumeChangeCommitted}
-                                                value={volume}
-                                                defaultValue={100}
-                                                classes={{
-                                                    root: showVolumeBar
-                                                        ? classes.volumeInputShown
-                                                        : classes.volumeInputHidden,
-                                                    thumb: showVolumeBar
-                                                        ? classes.volumeInputThumbShown
-                                                        : classes.volumeInputThumbHidden,
-                                                }}
-                                            />
-                                        </Grid>
-                                    </Grid>
-                                </Grid>
-                            )}
-                            <Grid item>
-                                <div className={classes.timeDisplay}>
-                                    {displayTime(progress * length)} / {displayTime(displayLength || length)}
-                                </div>
-                            </Grid>
-                            {offsetEnabled && !showVolumeBar && !isReallySmallScreen && (
-                                <Tooltip title={t('controls.subtitleOffset')!}>
-                                    <Grid item>
-                                        <SubtitleOffsetInput
-                                            inputRef={offsetInputRef}
-                                            offset={offset}
-                                            onOffset={handleOffsetChange}
-                                            disableKeyEvents={disableKeyEvents}
-                                        />
-                                    </Grid>
-                                </Tooltip>
-                            )}
-                            {playbackRateEnabled && !showVolumeBar && !isReallySmallScreen && (
+                        <ProgressBar
+                            onSeekPreview={onSeekPreview}
+                            onSeek={handleSeek}
+                            value={progress * 100}
+                            length={length}
+                            videoHeight={videoHeight}
+                            videoWidth={videoWidth}
+                            previewEnabled={previewEnabled}
+                            timestampPreviewEnabled={timestampPreviewEnabled}
+                        />
+                        {!hideToolbar && (
+                            <Grid container className={classes.gridContainer} direction="row" wrap="nowrap">
                                 <Grid item>
-                                    <Tooltip title={t('controls.playbackRate')!}>
-                                        <Input
-                                            style={{
-                                                width: `${playbackRateInputWidth}ch`,
-                                                marginLeft: 4,
-                                            }}
-                                            inputRef={playbackRateInputRef}
-                                            disableUnderline={true}
-                                            className={classes.numberInput}
-                                            placeholder={'×' + Number(1).toFixed(2)}
-                                            onClick={handleNumberInputClicked}
-                                            onBlur={handleNumberInputDeselected}
-                                            onChange={(e) =>
-                                                setPlaybackRateInputWidth(Math.max(5, e.target.value.length))
-                                            }
-                                        />
-                                    </Tooltip>
+                                    <IconButton color="inherit" onClick={() => (playing ? onPause() : onPlay())}>
+                                        {playing ? (
+                                            <PauseIcon className={classes.button} />
+                                        ) : (
+                                            <PlayArrowIcon className={classes.button} />
+                                        )}
+                                    </IconButton>
                                 </Grid>
-                            )}
-                            <Grid item style={{ flexGrow: 1 }}></Grid>
-                            <ResponsiveButtonGroup>
-                                {subtitleAlignmentEnabled && subtitleAlignment !== undefined && (
-                                    <Tooltip title={t('controls.subtitleAlignment')!}>
-                                        <IconButton color="inherit" onClick={handleSubtitleAlignment}>
-                                            {subtitleAlignment === 'top' ? (
-                                                <VerticalAlignTopIcon />
-                                            ) : (
-                                                <VerticalAlignBottomIcon />
-                                            )}
-                                        </IconButton>
-                                    </Tooltip>
+                                {volumeEnabled && (
+                                    <Grid
+                                        item
+                                        onMouseOver={handleVolumeMouseOver}
+                                        onMouseOut={handleVolumeMouseOut}
+                                        className={
+                                            showVolumeBar
+                                                ? classes.volumeInputContainerShown
+                                                : classes.volumeInputContainerHidden
+                                        }
+                                    >
+                                        <Grid container spacing={0} direction="row" wrap="nowrap">
+                                            <Grid item>
+                                                <IconButton color="inherit" onClick={handleVolumeToggle}>
+                                                    {volume === 0 ? <VolumeOffIcon /> : <VolumeUpIcon />}
+                                                </IconButton>
+                                            </Grid>
+                                            <Grid
+                                                item
+                                                style={{
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    justifyContent: 'center',
+                                                }}
+                                            >
+                                                <VolumeSlider
+                                                    onChange={handleVolumeChange}
+                                                    onChangeCommitted={handleVolumeChangeCommitted}
+                                                    value={volume}
+                                                    defaultValue={100}
+                                                    classes={{
+                                                        root: showVolumeBar
+                                                            ? classes.volumeInputShown
+                                                            : classes.volumeInputHidden,
+                                                        thumb: showVolumeBar
+                                                            ? classes.volumeInputThumbShown
+                                                            : classes.volumeInputThumbHidden,
+                                                    }}
+                                                />
+                                            </Grid>
+                                        </Grid>
+                                    </Grid>
                                 )}
-                                {subtitlesToggle && (
-                                    <Tooltip title={t('controls.toggleSubtitles')!}>
-                                        <IconButton color="inherit" onClick={onSubtitlesToggle}>
-                                            <SubtitlesIcon
-                                                className={subtitlesEnabled ? classes.button : classes.inactiveButton}
+                                {Number.isFinite(length) && (
+                                    <Grid item style={{ marginLeft: 10 }}>
+                                        <TimeDisplay
+                                            currentMilliseconds={progress * length}
+                                            totalMilliseconds={displayLength || length}
+                                        />
+                                    </Grid>
+                                )}
+                                {offsetEnabled && !showVolumeBar && !isReallySmallScreen && (
+                                    <Tooltip title={t('controls.subtitleOffset')}>
+                                        <Grid item style={{ marginLeft: 10 }}>
+                                            <SubtitleOffsetInput
+                                                inputRef={offsetInputRef}
+                                                offset={offset}
+                                                onOffset={handleOffsetChange}
+                                                disableKeyEvents={disableKeyEvents}
                                             />
-                                        </IconButton>
+                                        </Grid>
                                     </Tooltip>
                                 )}
-                                {videoFile && (
-                                    <Tooltip title={t('controls.unloadVideo')!}>
-                                        <IconButton color="inherit" onClick={handleVideoUnloaderOpened}>
-                                            <VideocamIcon className={classes.button} />
-                                        </IconButton>
-                                    </Tooltip>
-                                )}
-                                {audioTracks && audioTracks.length > 1 && (
-                                    <Tooltip title={t('controls.selectAudioTrack')!}>
-                                        <IconButton color="inherit" onClick={handleAudioTrackSelectorOpened}>
-                                            <QueueMusicIcon className={classes.button} />
-                                        </IconButton>
-                                    </Tooltip>
-                                )}
-                                {tabs && tabs.length > 0 && (
-                                    <Tooltip title={t('controls.selectVideoElement')!}>
-                                        <IconButton color="inherit" onClick={handleTabSelectorOpened}>
-                                            <VideocamIcon
-                                                className={selectedTab ? classes.button : classes.inactiveButton}
+                                {playbackRateEnabled && !showVolumeBar && !isReallySmallScreen && (
+                                    <Grid item style={{ marginLeft: 10 }}>
+                                        <Tooltip title={t('controls.playbackRate')}>
+                                            <PlaybackRateInput
+                                                inputRef={playbackRateInputRef}
+                                                playbackRate={playbackRate}
+                                                onPlaybackRate={handlePlaybackRateChange}
                                             />
-                                        </IconButton>
-                                    </Tooltip>
+                                        </Tooltip>
+                                    </Grid>
                                 )}
-                                {playModeEnabled && (
-                                    <Tooltip title={t('controls.playbackMode')!}>
-                                        <IconButton color="inherit" onClick={handlePlayModeSelectorOpened}>
-                                            <TuneIcon
-                                                className={playModeEnabled ? classes.button : classes.inactiveButton}
-                                            />
-                                        </IconButton>
-                                    </Tooltip>
-                                )}
-                                {popOutEnabled && (
-                                    <Tooltip title={popOut ? t('controls.popIn')! : t('controls.popOut')!}>
-                                        <IconButton color="inherit" onClick={onPopOutToggle}>
-                                            <OpenInNewIcon
-                                                className={classes.button}
-                                                style={popOut ? { transform: 'rotateX(180deg)' } : {}}
-                                            />
-                                        </IconButton>
-                                    </Tooltip>
-                                )}
-                                {fullscreenEnabled && (
-                                    <Tooltip title={t('controls.toggleFullscreen')!}>
-                                        <IconButton color="inherit" onClick={onFullscreenToggle}>
-                                            {fullscreen ? (
-                                                <FullscreenExitIcon className={classes.button} />
-                                            ) : (
-                                                <FullscreenIcon className={classes.button} />
-                                            )}
-                                        </IconButton>
-                                    </Tooltip>
-                                )}
-                            </ResponsiveButtonGroup>
-                        </Grid>
+                                <Grid item style={{ flexGrow: 1 }}></Grid>
+                                <ResponsiveButtonGroup>
+                                    {subtitleAlignmentEnabled && subtitleAlignment !== undefined && (
+                                        <Tooltip title={t('controls.subtitleAlignment')}>
+                                            <IconButton color="inherit" onClick={handleSubtitleAlignment}>
+                                                {subtitleAlignment === 'top' ? (
+                                                    <VerticalAlignTopIcon />
+                                                ) : (
+                                                    <VerticalAlignBottomIcon />
+                                                )}
+                                            </IconButton>
+                                        </Tooltip>
+                                    )}
+                                    {subtitlesToggle && (
+                                        <Tooltip title={t('controls.toggleSubtitles')}>
+                                            <IconButton color="inherit" onClick={onSubtitlesToggle}>
+                                                <SubtitlesIcon
+                                                    className={
+                                                        subtitlesEnabled ? classes.button : classes.inactiveButton
+                                                    }
+                                                />
+                                            </IconButton>
+                                        </Tooltip>
+                                    )}
+                                    {audioTracks && audioTracks.length > 1 && (
+                                        <Tooltip title={t('controls.selectAudioTrack')}>
+                                            <IconButton color="inherit" onClick={handleAudioTrackSelectorOpened}>
+                                                <QueueMusicIcon className={classes.button} />
+                                            </IconButton>
+                                        </Tooltip>
+                                    )}
+                                    {onLoadSubtitles && (
+                                        <Tooltip title={t('action.loadSubtitles')}>
+                                            <IconButton
+                                                color="inherit"
+                                                onClick={onLoadSubtitles}
+                                                onMouseOver={handleMouseOver}
+                                                onMouseOut={handleMouseOut}
+                                            >
+                                                <LoadSubtitlesIcon />
+                                            </IconButton>
+                                        </Tooltip>
+                                    )}
+                                    {tabs && tabs.length > 0 && (
+                                        <Tooltip title={t('controls.selectVideoElement')}>
+                                            <IconButton color="inherit" onClick={handleTabSelectorOpened}>
+                                                {selectedTab && selectedTab.faviconUrl ? (
+                                                    <img style={{ maxWidth: 24 }} src={selectedTab.faviconUrl} />
+                                                ) : (
+                                                    <VideocamIcon className={classes.button} />
+                                                )}
+                                            </IconButton>
+                                        </Tooltip>
+                                    )}
+                                    {playModeEnabled && (
+                                        <Tooltip title={t('controls.playbackMode')}>
+                                            <IconButton color="inherit" onClick={handlePlayModeSelectorClicked}>
+                                                <TuneIcon
+                                                    className={
+                                                        playModeEnabled ? classes.button : classes.inactiveButton
+                                                    }
+                                                />
+                                            </IconButton>
+                                        </Tooltip>
+                                    )}
+                                    {popOutEnabled && (
+                                        <Tooltip title={popOut ? t('controls.popIn') : t('controls.popOut')}>
+                                            <IconButton color="inherit" onClick={onPopOutToggle}>
+                                                <OpenInNewIcon
+                                                    className={classes.button}
+                                                    style={popOut ? { transform: 'rotateX(180deg)' } : {}}
+                                                />
+                                            </IconButton>
+                                        </Tooltip>
+                                    )}
+                                    {onBlurOverlayToggle && (
+                                        <Tooltip
+                                            title={
+                                                blurOverlayEnabled
+                                                    ? t('controls.hideBlurOverlay')
+                                                    : t('controls.showBlurOverlay')
+                                            }
+                                        >
+                                            <IconButton color="inherit" onClick={onBlurOverlayToggle}>
+                                                {blurOverlayEnabled ? (
+                                                    <BlurOnIcon className={classes.button} />
+                                                ) : (
+                                                    <BlurOffIcon className={classes.inactiveButton} />
+                                                )}
+                                            </IconButton>
+                                        </Tooltip>
+                                    )}
+                                </ResponsiveButtonGroup>
+                            </Grid>
+                        )}
                     </div>
                 </Fade>
                 <TabSelector
@@ -1230,19 +1243,13 @@ export default function Controls({
                     onClose={handleAudioTrackSelectorClosed}
                     onAudioTrackSelected={handleAudioTrackSelected}
                 />
-                <MediaUnloader
-                    open={videoUnloaderOpen}
-                    anchorEl={videoUnloaderAnchorEl}
-                    file={videoFile}
-                    onClose={handleVideoUnloaderClosed}
-                    onUnload={handleUnloadVideo}
-                />
                 <PlayModeSelector
                     open={playModeSelectorOpen && show}
                     anchorEl={playModeSelectorAnchorEl}
-                    selectedPlayMode={playMode}
+                    selectedPlayModes={playModes || new Set()}
                     onClose={handlePlayModeSelectorClosed}
                     onPlayMode={handlePlayModeSelected}
+                    listStyle={{ flexDirection: 'column' }}
                 />
             </div>
         </React.Fragment>

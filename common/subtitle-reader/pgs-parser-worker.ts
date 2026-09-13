@@ -1,12 +1,11 @@
-import { DisplaySet, parseDisplaySets } from 'pgs-parser';
+import type { DisplaySet } from 'pgs-parser';
+import { parseDisplaySets } from 'pgs-parser';
 
-// OffscreenCanvas not in lib.dom.d.ts
-// @ts-ignore
 function parse(fileStream: ReadableStream, canvas: OffscreenCanvas) {
     let currentImageDisplaySet: DisplaySet | undefined;
     let imageDataArray: Uint8ClampedArray | undefined;
 
-    fileStream.pipeThrough(parseDisplaySets()).pipeTo(
+    void fileStream.pipeThrough(parseDisplaySets()).pipeTo(
         new WritableStream<DisplaySet>({
             close() {
                 postMessage({
@@ -19,7 +18,7 @@ function parse(fileStream: ReadableStream, canvas: OffscreenCanvas) {
                     error,
                 });
             },
-            async write(displaySet, controller) {
+            async write(displaySet) {
                 if (displaySet.objectDefinitionSegments.length > 0) {
                     if (currentImageDisplaySet === undefined) {
                         currentImageDisplaySet = displaySet;
@@ -40,9 +39,7 @@ function parse(fileStream: ReadableStream, canvas: OffscreenCanvas) {
                         command: 'subtitle',
                         imageBlob: await canvas.convertToBlob({ type: 'image/png' }),
                         subtitle: {
-                            start:
-                                currentImageDisplaySet.objectDefinitionSegments[0].header.presentationTimestamp / 90 ??
-                                0,
+                            start: currentImageDisplaySet.objectDefinitionSegments[0].header.presentationTimestamp / 90,
                             end: displaySet.endDefinitionSegment.header.presentationTimestamp / 90,
                             text: '',
                             textImage: {
@@ -65,7 +62,11 @@ function parse(fileStream: ReadableStream, canvas: OffscreenCanvas) {
     );
 }
 
-onmessage = async (e: MessageEvent) => {
-    const { fileStream, canvas } = e.data;
-    parse(fileStream, canvas);
-};
+export function onMessage() {
+    onmessage = async (e: MessageEvent) => {
+        const { fileStream, canvas } = e.data;
+        parse(fileStream, canvas);
+    };
+}
+
+onMessage();

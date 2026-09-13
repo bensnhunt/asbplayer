@@ -1,23 +1,42 @@
-import {
+import { arrayEquals, asbError } from '@project/common/util';
+import type {
+    ActiveProfileMessage,
     ConfirmedVideoDataSubtitleTrack,
-    ExtensionSyncMessage,
+    OpenAsbplayerSettingsMessage,
     SerializedSubtitleFile,
+    SettingsUpdatedMessage,
     VideoData,
     VideoDataSubtitleTrack,
     VideoDataUiBridgeConfirmMessage,
     VideoDataUiBridgeOpenFileMessage,
-    VideoDataUiState,
+    VideoDataUiBridgeSetGenericSubtitleParserMessage,
+    VideoDataUiBridgeSetOnlineSubtitleSourceConfigMessage,
+    VideoDataUiModel,
     VideoToExtensionCommand,
+    SubtitleGenerationMessage,
+    SubtitleGenerationResponse,
+    GeneratedSubtitleCacheEntry,
+    SubtitleGenerationUiState,
 } from '@project/common';
-import { AsbplayerSettings, SettingsProvider, SubtitleListPreference } from '@project/common/settings';
-import { bufferToBase64 } from '../services/base64';
-import Binding from '../services/binding';
-import ImageElement from '../services/image-element';
-import { currentPageDelegate } from '../services/pages';
-import { Parser as m3U8Parser } from 'm3u8-parser';
-import UiFrame from '../services/ui-frame';
-import { fetchLocalization } from '../services/localization-fetcher';
+import { VideoDataUiOpenReason } from '@project/common';
+import type { AsbplayerSettings, SettingsProvider } from '@project/common/settings';
+import { base64ToBlob, bufferToBase64 } from '@project/common/base64';
+import type Binding from '@project/extension/src/services/binding';
+import { currentPageDelegate } from '@project/extension/src/services/pages';
+import type UiFrame from '@project/extension/src/services/ui-frame';
+import { uiFrameForHtml } from '@project/extension/src/services/ui-frame';
+import { fetchLocalization } from '@project/extension/src/services/localization-fetcher';
 import i18n from 'i18next';
+import { ExtensionGlobalStateProvider } from '@/services/extension-global-state-provider';
+import { isOnTutorialPage } from '@/services/tutorial';
+import { subtitleFileExtensionForUrl } from '@/pages/util';
+import { frameColorSchemeStyleBlock } from '@/services/frame-color-scheme';
+import { setGenericSubtitleParserOptionsForHost } from '@/services/generic-subtitle-parser';
+import { isMobile } from '@project/common/device-detection/mobile';
+
+declare global {
+    function cloneInto(obj: any, targetScope: any, options?: any): any;
+}
 
 async function html(lang: string) {
     return `<!DOCTYPE html>
@@ -27,24 +46,29 @@ async function html(lang: string) {
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <title>asbplayer - Video Data Sync</title>
                 <style>
-                    @import url(${chrome.runtime.getURL('./assets/fonts.css')});
+                    @import url(${browser.runtime.getURL('/fonts/fonts.css')});
+                    ${frameColorSchemeStyleBlock()}
                 </style>
             </head>
             <body>
                 <div id="root" style="width:100%;height:100vh;"></div>
                 <script type="application/json" id="loc">${JSON.stringify(await fetchLocalization(lang))}</script>
-                <script src="${chrome.runtime.getURL('./video-data-sync-ui.js')}"></script>
+                <script type="module" src="${browser.runtime.getURL('/video-data-sync-ui.js')}"></script>
             </body>
             </html>`;
 }
 
 interface ShowOptions {
-    userRequested: boolean;
-    openedFromMiningCommand: boolean;
+    reason: VideoDataUiOpenReason;
+    fromAsbplayerId?: string;
 }
 
+type RequestSubtitlesOptions =
+    | { readonly kind: 'reload'; readonly videoChanged: boolean }
+    | { readonly kind: 'refresh-open-picker' };
+
 const fetchDataForLanguageOnDemand = (language: string): Promise<VideoData> => {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
         const listener = (event: Event) => {
             const data = (event as CustomEvent).detail as VideoData;
             resolve(data);
@@ -55,194 +79,287 @@ const fetchDataForLanguageOnDemand = (language: string): Promise<VideoData> => {
     });
 };
 
+const globalStateProvider = new ExtensionGlobalStateProvider();
+
 export default class VideoDataSyncController {
     private readonly _context: Binding;
     private readonly _domain: string;
     private readonly _frame: UiFrame;
     private readonly _settings: SettingsProvider;
 
-    private _videoSelectBound?: boolean;
-    private _imageElement: ImageElement;
-    private _doneListener?: () => void;
     private _autoSync?: boolean;
     private _lastLanguagesSynced: { [key: string]: string[] };
     private _emptySubtitle: VideoDataSubtitleTrack;
-    private _boundFunction?: (event: Event) => void;
     private _syncedData?: VideoData;
     private _wasPaused?: boolean;
+    private _playBlocker?: () => void;
+    private _openedLocation?: string;
     private _fullscreenElement?: Element;
     private _activeElement?: Element;
-    private _autoSyncing: boolean = false;
-    private _waitingForSubtitles: boolean = false;
+    private _autoSyncAttempted: boolean = false;
+    private _refreshingOpenPicker: boolean = false;
+    private _dataReceivedListener?: (event: Event) => void;
+    private _dataReceivedEventTarget?: EventTarget;
+    private _isTutorial: boolean;
+    private _generationJobId?: string;
+    private _applyingGeneratedSubtitleCacheId?: string;
 
     constructor(context: Binding, settings: SettingsProvider) {
         this._context = context;
         this._settings = settings;
-        this._videoSelectBound = false;
-        this._imageElement = new ImageElement(context.video);
-        this._doneListener;
         this._autoSync = false;
         this._lastLanguagesSynced = {};
         this._emptySubtitle = {
+            id: '-',
             language: '-',
             url: '-',
             label: i18n.t('extension.videoDataSync.emptySubtitleTrack'),
             extension: 'srt',
         };
-        this._boundFunction;
         this._domain = new URL(window.location.href).host;
-        this._frame = new UiFrame(html);
+        this._frame = uiFrameForHtml(html);
+        this._isTutorial = isOnTutorialPage();
     }
 
-    private get lastLanguageSynced(): string[] {
+    private get lastLanguagesSynced(): string[] {
         return this._lastLanguagesSynced[this._domain] ?? [];
     }
 
-    private set lastLanguageSynced(value: string[]) {
+    private set lastLanguagesSynced(value: string[]) {
         this._lastLanguagesSynced[this._domain] = value;
     }
 
-    bindVideoSelect(doneListener: () => void) {
-        if (this._videoSelectBound) {
-            throw new Error('Video select container already bound');
-        }
-
-        const image = this._imageElement.element();
-        image.classList.remove('asbplayer-hide');
-        image.classList.add('asbplayer-mouse-over-image');
-
-        image.addEventListener('click', (e) => {
-            e.preventDefault();
-            this._doneListener = doneListener;
-            this.show({ userRequested: true, openedFromMiningCommand: false });
-        });
-
-        this._videoSelectBound = true;
-    }
-
     unbind() {
-        if (this._boundFunction) {
-            document.removeEventListener('asbplayer-synced-data', this._boundFunction, false);
+        if (this._dataReceivedListener) {
+            this._dataReceivedEventTarget?.removeEventListener(
+                'asbplayer-synced-data',
+                this._dataReceivedListener,
+                false
+            );
         }
 
-        this._boundFunction = undefined;
+        this._dataReceivedListener = undefined;
+        this._dataReceivedEventTarget = undefined;
         this._syncedData = undefined;
-        this.unbindVideoSelect();
-    }
-
-    unbindVideoSelect() {
-        this._imageElement.remove();
+        this._refreshingOpenPicker = false;
+        this._cancelActiveGeneration();
+        this._cleanupPlayBlocker();
+        this._openedLocation = undefined;
         this._frame.unbind();
-        this._wasPaused = undefined;
-        this._videoSelectBound = false;
-        this._doneListener = undefined;
     }
 
     updateSettings({ streamingAutoSync, streamingLastLanguagesSynced }: AsbplayerSettings) {
         this._autoSync = streamingAutoSync;
         this._lastLanguagesSynced = streamingLastLanguagesSynced;
+
+        if (this._frame.clientIfLoaded !== undefined) {
+            void this._context.settings.getSingle('themeType').then((themeType) => {
+                const profilesPromise = this._context.settings.profiles();
+                const activeProfilePromise = this._context.settings.activeProfile();
+                void Promise.all([profilesPromise, activeProfilePromise]).then(([profiles, activeProfile]) => {
+                    this._frame.clientIfLoaded?.updateState({
+                        settings: {
+                            themeType,
+                            profiles,
+                            activeProfile: activeProfile?.name,
+                        },
+                    });
+                });
+            });
+        }
     }
 
-    requestSubtitles() {
-        if (!this._context.subSyncAvailable || !currentPageDelegate()?.isVideoPage()) {
+    get pickerVisible(): boolean {
+        return !this._frame.hidden;
+    }
+
+    get openedLocation(): string | undefined {
+        return this._openedLocation;
+    }
+
+    async requestSubtitles(request: RequestSubtitlesOptions) {
+        if (!this._context.hasPageScript) {
             return;
         }
 
-        this._syncedData = undefined;
+        // While the picker is open on the same location, ignore ordinary reloads
+        // so player events do not clobber an in-progress user selection. On a true
+        // soft-navigation or an explicitly reported video change, dismiss the stale
+        // picker and continue.
+        if (this.pickerVisible && request.kind === 'reload') {
+            const locationChanged = this.openedLocation !== undefined && window.location.href !== this.openedLocation;
+            if (locationChanged || request.videoChanged) {
+                this._cancelActiveGeneration();
+                this._hideAndResume();
+            } else {
+                return;
+            }
+        }
 
-        if (!this._boundFunction) {
-            let allowAutoSync = true;
+        const pageDelegate = await currentPageDelegate();
 
-            this._boundFunction = (event: Event) => {
+        if (!pageDelegate.isVideoPage()) {
+            return;
+        }
+
+        if (request.kind === 'refresh-open-picker') {
+            this._refreshingOpenPicker = true;
+        } else {
+            this._syncedData = undefined;
+            this._autoSyncAttempted = false;
+            this._refreshingOpenPicker = false;
+        }
+
+        const eventTarget = pageDelegate.config.generic ? this._context.video : document;
+        if (!this._dataReceivedListener || this._dataReceivedEventTarget !== eventTarget) {
+            if (this._dataReceivedListener) {
+                this._dataReceivedEventTarget?.removeEventListener(
+                    'asbplayer-synced-data',
+                    this._dataReceivedListener,
+                    false
+                );
+            }
+            this._dataReceivedListener = (event: Event) => {
                 const data = (event as CustomEvent).detail as VideoData;
-                const autoSync = allowAutoSync && data.subtitles !== undefined;
-                this._waitingForSubtitles = data.subtitles === undefined;
-                this._setSyncedData(data, autoSync);
-
-                if (autoSync) {
-                    // Only attempt auto-sync on first response with subtitles received
-                    allowAutoSync = false;
-                }
+                void this._setSyncedData(data);
             };
-            document.addEventListener('asbplayer-synced-data', this._boundFunction, false);
+            this._dataReceivedEventTarget = eventTarget;
+            eventTarget.addEventListener('asbplayer-synced-data', this._dataReceivedListener, false);
         }
 
-        document.dispatchEvent(new CustomEvent('asbplayer-get-synced-data'));
-        this._waitingForSubtitles = true;
+        if (pageDelegate.config.key === 'youtube') {
+            const targetTranslationLanguageCodes =
+                (await this._settings.getSingle('streamingPages')).youtube.targetLanguages ?? [];
+            let payload = { targetTranslationLanguageCodes };
+            if (typeof cloneInto === 'function') {
+                payload = cloneInto(payload, document.defaultView);
+            }
+            document.dispatchEvent(new CustomEvent('asbplayer-get-synced-data', { detail: payload }));
+        } else {
+            eventTarget.dispatchEvent(
+                new CustomEvent('asbplayer-get-synced-data', {
+                    bubbles: pageDelegate.config.generic,
+                    composed: pageDelegate.config.generic,
+                })
+            );
+        }
     }
 
-    async show({ userRequested, openedFromMiningCommand }: ShowOptions) {
-        if (!userRequested && this._syncedData?.subtitles === undefined) {
-            // Not user-requested and subtitles track detection is not finished
-            return;
+    async show({ reason, fromAsbplayerId }: ShowOptions) {
+        const client = await this._client();
+        const additionalFields: Partial<VideoDataUiModel> = {
+            open: true,
+            openReason: reason,
+        };
+
+        if (fromAsbplayerId !== undefined) {
+            additionalFields.openedFromAsbplayerId = fromAsbplayerId;
         }
 
+        const model = await this._buildModel(additionalFields);
+        this._prepareShow();
+        client.updateState(model);
+
+        void this._refreshGeneratedSubtitleTracks();
+
+        const pageDelegate = await currentPageDelegate();
+        if (pageDelegate.config.refreshSubtitleDataOnPickerOpen === true) {
+            void this.requestSubtitles({ kind: 'refresh-open-picker' });
+        }
+    }
+
+    private async _buildModel(additionalFields: Partial<VideoDataUiModel>) {
         const subtitleTrackChoices = this._syncedData?.subtitles ?? [];
         const subs = this._matchLastSyncedWithAvailableTracks();
-        const selectedSub: VideoDataSubtitleTrack[] = subs.autoSelectedTracks;
-
-        if (subs.completeMatch && !userRequested && !this._syncedData?.error) {
-            // Instead of showing, auto-sync
-            if (!this._autoSyncing) {
-                this._autoSyncing = true;
-                try {
-                    if ((await this._syncData(selectedSub)) && this._doneListener) {
-                        this._doneListener();
-                    }
-                } finally {
-                    this._autoSyncing = false;
-                }
-            }
-        } else {
-            // Either user-requested or we couldn't auto-sync subtitles with the preferred language
-            const defaultCheckboxState: boolean = subs.completeMatch;
-            const themeType = await this._context.settings.getSingle('themeType');
-            let state: VideoDataUiState = this._syncedData
-                ? {
-                      open: true,
-                      isLoading: this._syncedData.subtitles === undefined,
-                      suggestedName: this._syncedData.basename,
-                      selectedSubtitle: ['-'],
-                      subtitles: subtitleTrackChoices,
-                      error: this._syncedData.error,
+        const autoSelectedTracks: VideoDataSubtitleTrack[] = subs.autoSelectedTracks;
+        const autoSelectedTrackIds = this._isTutorial
+            ? // '1' is the ID of the non-empty track in the tutorial
+              // See asbplayer-tutorial-page.ts
+              ['1', '-', '-']
+            : autoSelectedTracks.map((subtitle) => subtitle.id || '-');
+        const defaultCheckboxState = !this._isTutorial && subs.completeMatch;
+        const themeType = await this._context.settings.getSingle('themeType');
+        const profilesPromise = this._context.settings.profiles();
+        const activeProfilePromise = this._context.settings.activeProfile();
+        const globalState = await globalStateProvider.get([
+            'ftueHasSeenSubtitleTrackSelector',
+            'genericSubtitleParser',
+            'onlineSubtitleSourceConfig',
+        ]);
+        const hasSeenFtue = globalState.ftueHasSeenSubtitleTrackSelector;
+        const onlineSubtitleSourceConfig = globalState.onlineSubtitleSourceConfig;
+        const pageDelegate = await currentPageDelegate();
+        const hideRememberTrackPreferenceToggle =
+            this._isTutorial || pageDelegate.config.hideRememberTrackPreferenceToggle === true;
+        const isGenericPage = pageDelegate.config.generic === true;
+        const showGenericPageOption =
+            !this._isTutorial && (isGenericPage || pageDelegate.config.pageScript === undefined);
+        const genericSubtitleParser = globalState.genericSubtitleParser.pages[window.location.host]?.parse ?? 'off';
+        const subtitleGeneration = this._subtitleGenerationSourceUrl()
+            ? ({ sourceUrl: this._subtitleGenerationSourceUrl(), state: 'idle' } satisfies SubtitleGenerationUiState)
+            : undefined;
+        return this._syncedData
+            ? {
+                  isLoading: this._syncedData.subtitles === undefined,
+                  suggestedName: this._syncedData.basename,
+                  selectedSubtitle: autoSelectedTrackIds,
+                  subtitles: subtitleTrackChoices,
+                  error: this._syncedData.error,
+                  defaultCheckboxState: defaultCheckboxState,
+                  openedFromAsbplayerId: '',
+                  settings: {
                       themeType: themeType,
-                      openedFromMiningCommand,
-                      defaultCheckboxState: defaultCheckboxState,
-                  }
-                : {
-                      open: true,
-                      isLoading: this._context.subSyncAvailable && this._waitingForSubtitles,
-                      suggestedName: document.title,
-                      selectedSubtitle: ['-'],
-                      error: '',
-                      showSubSelect: true,
-                      subtitles: subtitleTrackChoices,
+                      profiles: await profilesPromise,
+                      activeProfile: (await activeProfilePromise)?.name,
+                  },
+                  hasSeenFtue,
+                  hideRememberTrackPreferenceToggle,
+                  isGenericPage,
+                  showGenericPageOption,
+                  genericSubtitleParser,
+                  subtitleGeneration,
+                  onlineSubtitleSourceConfig,
+                  ...additionalFields,
+              }
+            : {
+                  isLoading: this._context.hasPageScript,
+                  suggestedName: document.title,
+                  selectedSubtitle: autoSelectedTrackIds,
+                  error: '',
+                  subtitles: subtitleTrackChoices,
+                  defaultCheckboxState: defaultCheckboxState,
+                  openedFromAsbplayerId: '',
+                  settings: {
                       themeType: themeType,
-                      openedFromMiningCommand,
-                      defaultCheckboxState: defaultCheckboxState,
-                  };
-            state.selectedSubtitle = selectedSub.map((subtitle) => subtitle.language || '-');
-            const client = await this._client();
-            this._prepareShow();
-            client.updateState(state);
-        }
+                      profiles: await profilesPromise,
+                      activeProfile: (await activeProfilePromise)?.name,
+                  },
+                  hasSeenFtue,
+                  hideRememberTrackPreferenceToggle,
+                  isGenericPage,
+                  showGenericPageOption,
+                  genericSubtitleParser,
+                  subtitleGeneration,
+                  onlineSubtitleSourceConfig,
+                  ...additionalFields,
+              };
     }
 
     private _matchLastSyncedWithAvailableTracks() {
         const subtitleTrackChoices = this._syncedData?.subtitles ?? [];
-        let tracks = {
+        const tracks = {
             autoSelectedTracks: [this._emptySubtitle, this._emptySubtitle, this._emptySubtitle],
             completeMatch: false,
         };
 
-        const emptyChoice = this.lastLanguageSynced.some((lang) => lang !== '-') === undefined;
+        const emptyChoice = this.lastLanguagesSynced.some((lang) => lang !== '-') === undefined;
 
         if (!subtitleTrackChoices.length && emptyChoice) {
             tracks.completeMatch = true;
         } else {
             let matches: number = 0;
-            for (let i = 0; i < this.lastLanguageSynced.length; i++) {
-                const language = this.lastLanguageSynced[i];
+            for (let i = 0; i < this.lastLanguagesSynced.length; i++) {
+                const language = this.lastLanguagesSynced[i];
                 for (let j = 0; j < subtitleTrackChoices.length; j++) {
                     if (language === '-') {
                         matches++;
@@ -254,7 +371,7 @@ export default class VideoDataSyncController {
                     }
                 }
             }
-            if (matches === this.lastLanguageSynced.length) {
+            if (matches === this.lastLanguagesSynced.length) {
                 tracks.completeMatch = true;
             }
         }
@@ -274,21 +391,82 @@ export default class VideoDataSyncController {
         return subtitleTrack.label;
     }
 
-    private _setSyncedData(data: VideoData, autoSync: boolean) {
+    private async _setSyncedData(data: VideoData) {
+        const previousData = this._syncedData;
+        const generatedTracks =
+            previousData?.subtitles?.filter((track) => track.generatedSubtitleCacheId !== undefined) ?? [];
+        if (generatedTracks.length > 0 && data.subtitles !== undefined) {
+            data = {
+                ...data,
+                subtitles: [
+                    ...data.subtitles,
+                    ...generatedTracks.filter(
+                        (generatedTrack) => !data.subtitles!.some((track) => track.id === generatedTrack.id)
+                    ),
+                ],
+            };
+        }
         this._syncedData = data;
 
-        if (autoSync && this._canAutoSync()) {
-            this.show({ userRequested: false, openedFromMiningCommand: false });
-        }
+        if (this._updateOpenPickerFromRefresh(previousData, data)) return;
+
+        const wasLoading = previousData?.subtitles === undefined;
+        if (await this._handleAutoSync(wasLoading)) return;
+
+        await this._updatePickerAfterDataReceived(wasLoading);
     }
 
-    private _canAutoSync(): boolean {
-        const page = currentPageDelegate();
-
-        if (page === undefined) {
-            return this._autoSync ?? false;
+    private _updateOpenPickerFromRefresh(previousData: VideoData | undefined, data: VideoData): boolean {
+        if (!this._refreshingOpenPicker || !this.pickerVisible || previousData?.subtitles === undefined) {
+            return false;
         }
 
+        const previousSubtitleIds = previousData.subtitles.map((track) => track.id);
+        const subtitleIds = data.subtitles?.map((track) => track.id);
+        if (!arrayEquals(previousSubtitleIds, subtitleIds)) {
+            this._frame.clientIfLoaded?.updateState({
+                subtitles: data.subtitles ?? [],
+                suggestedName: data.basename,
+                error: data.error ?? '',
+                isLoading: false,
+            });
+        }
+
+        return true;
+    }
+
+    private async _handleAutoSync(wasLoading: boolean): Promise<boolean> {
+        if (this._syncedData?.subtitles === undefined || !(await this._canAutoSync())) return false;
+        if (this._autoSyncAttempted) return true;
+        this._autoSyncAttempted = true;
+
+        if (this.pickerVisible) {
+            if (wasLoading) this._frame.clientIfLoaded?.updateState(await this._buildModel({})); // Picker is open in loading state. Populate it now that tracks have arrived.
+            return true;
+        }
+
+        const subs = this._matchLastSyncedWithAvailableTracks();
+        if (subs.completeMatch) {
+            const autoSelectedTracks: VideoDataSubtitleTrack[] = subs.autoSelectedTracks;
+            await this._syncData(autoSelectedTracks);
+        } else {
+            const shouldPrompt = await this._settings.getSingle('streamingAutoSyncPromptOnFailure');
+
+            if (shouldPrompt) {
+                await this.show({ reason: VideoDataUiOpenReason.failedToAutoLoadPreferredTrack });
+            }
+        }
+
+        return true;
+    }
+
+    private async _updatePickerAfterDataReceived(wasLoading: boolean) {
+        if (this.pickerVisible && !wasLoading) return;
+        this._frame.clientIfLoaded?.updateState(await this._buildModel({}));
+    }
+
+    private async _canAutoSync(): Promise<boolean> {
+        const page = await currentPageDelegate();
         return this._autoSync === true && page.canAutoSync(this._context.video);
     }
 
@@ -298,64 +476,114 @@ export default class VideoDataSyncController {
         const client = await this._frame.client();
 
         if (isNewClient) {
-            client.onMessage(async (message) => {
-                let shallUpdate = true;
-
-                if ('confirm' === message.command) {
-                    const confirmMessage = message as VideoDataUiBridgeConfirmMessage;
-
-                    if (confirmMessage.shouldRememberTrackChoices) {
-                        this.lastLanguageSynced = confirmMessage.data.map((track) => track.language);
-                        await this._context.settings
-                            .set({ streamingLastLanguagesSynced: this._lastLanguagesSynced })
-                            .catch(() => {});
+            client.onMessage((message) => {
+                void (async () => {
+                    if ('openSettings' === message.command) {
+                        const openSettingsCommand: VideoToExtensionCommand<OpenAsbplayerSettingsMessage> = {
+                            sender: 'asbplayer-video',
+                            message: {
+                                command: 'open-asbplayer-settings',
+                            },
+                            src: this._context.registeredVideoSrc,
+                        };
+                        void browser.runtime.sendMessage(openSettingsCommand);
+                        return;
                     }
 
-                    const data = confirmMessage.data as ConfirmedVideoDataSubtitleTrack[];
+                    if ('activeProfile' === message.command) {
+                        const activeProfileMessage = message as ActiveProfileMessage;
+                        await this._context.settings.setActiveProfile(activeProfileMessage.profile);
+                        const settingsUpdatedCommand: VideoToExtensionCommand<SettingsUpdatedMessage> = {
+                            sender: 'asbplayer-video',
+                            message: {
+                                command: 'settings-updated',
+                            },
+                            src: this._context.registeredVideoSrc,
+                        };
+                        void browser.runtime.sendMessage(settingsUpdatedCommand);
+                        return;
+                    }
 
-                    shallUpdate = await this._syncDataArray(data);
-                } else if ('openFile' === message.command) {
-                    const openFileMessage = message as VideoDataUiBridgeOpenFileMessage;
-                    const subtitles = openFileMessage.subtitles as SerializedSubtitleFile[];
+                    if ('dismissFtue' === message.command) {
+                        globalStateProvider
+                            .set({ ftueHasSeenSubtitleTrackSelector: true })
+                            .catch((error) => asbError('video/sync', error));
+                        return;
+                    }
 
-                    try {
-                        this._syncSubtitles(subtitles, false);
-                        shallUpdate = true;
-                    } catch (e) {
-                        if (e instanceof Error) {
-                            this._reportError(e.message);
+                    if ('setOnlineSubtitleSourceConfig' === message.command) {
+                        const setOnlineSubtitleSourceConfigMessage =
+                            message as VideoDataUiBridgeSetOnlineSubtitleSourceConfigMessage;
+                        const currentOnlineSubtitleSourceConfig = (
+                            await globalStateProvider.get(['onlineSubtitleSourceConfig'])
+                        ).onlineSubtitleSourceConfig;
+
+                        await globalStateProvider.set({
+                            onlineSubtitleSourceConfig: {
+                                ...currentOnlineSubtitleSourceConfig,
+                                ...setOnlineSubtitleSourceConfigMessage.state,
+                            },
+                        });
+                        return;
+                    }
+
+                    if ('setGenericSubtitleParser' === message.command) {
+                        const setGenericSubtitleParserMessage =
+                            message as VideoDataUiBridgeSetGenericSubtitleParserMessage;
+                        await setGenericSubtitleParserOptionsForHost(
+                            globalStateProvider,
+                            window.location.host,
+                            setGenericSubtitleParserMessage.parse
+                        );
+                        return;
+                    }
+
+                    if ('cancel' === message.command) {
+                        this._cancelActiveGeneration();
+                        this._hideAndResume();
+                        return;
+                    }
+
+                    if ('subtitle-generation' === message.command) {
+                        await this._handleSubtitleGenerationMessage(message as SubtitleGenerationMessage);
+                        return;
+                    }
+
+                    let dataWasSynced = true;
+
+                    if ('confirm' === message.command) {
+                        const confirmMessage = message as VideoDataUiBridgeConfirmMessage;
+
+                        if (confirmMessage.shouldRememberTrackChoices) {
+                            this.lastLanguagesSynced = confirmMessage.data
+                                .map((track) => track.language)
+                                .filter((language) => language !== undefined);
+                            await this._context.settings
+                                .set({ streamingLastLanguagesSynced: this._lastLanguagesSynced })
+                                .catch(() => {});
+                        }
+
+                        const data = confirmMessage.data;
+
+                        dataWasSynced = await this._syncDataArray(data, confirmMessage.syncWithAsbplayerId);
+                    } else if ('openFile' === message.command) {
+                        const openFileMessage = message as VideoDataUiBridgeOpenFileMessage;
+                        const subtitles = openFileMessage.subtitles;
+
+                        try {
+                            await this._syncSubtitles(subtitles, false);
+                            dataWasSynced = true;
+                        } catch (e) {
+                            if (e instanceof Error) {
+                                await this._reportError(e.message);
+                            }
                         }
                     }
-                }
 
-                if (shallUpdate) {
-                    this._context.keyBindings.bind(this._context);
-                    this._context.subtitleController.forceHideSubtitles = false;
-                    this._context.mobileVideoOverlayController.forceHide = false;
-                    this._frame?.hide();
-
-                    if (this._fullscreenElement) {
-                        this._fullscreenElement.requestFullscreen();
-                        this._fullscreenElement = undefined;
+                    if (dataWasSynced) {
+                        this._hideAndResume();
                     }
-
-                    if (this._activeElement) {
-                        if (typeof (this._activeElement as HTMLElement).focus === 'function') {
-                            (this._activeElement as HTMLElement).focus();
-                        }
-
-                        this._activeElement = undefined;
-                    } else {
-                        window.focus();
-                    }
-
-                    if (!this._wasPaused) {
-                        this._context.play();
-                    }
-
-                    this._wasPaused = undefined;
-                    if (this._doneListener) this._doneListener();
-                }
+                })().catch((error) => asbError('video/sync', error));
             });
         }
 
@@ -364,12 +592,24 @@ export default class VideoDataSyncController {
     }
 
     private _prepareShow() {
+        this._applyingGeneratedSubtitleCacheId = undefined;
+        this._openedLocation = window.location.href;
         this._wasPaused = this._wasPaused ?? this._context.video.paused;
         this._context.pause();
 
+        // Some players (e.g. Hulu) call video.play() on an internal timer that
+        // ignores the picker being open. Re-pause on any play event until the
+        // picker is dismissed.
+        if (!this._playBlocker) {
+            this._playBlocker = () => {
+                this._context.pause();
+            };
+            this._context.video.addEventListener('play', this._playBlocker);
+        }
+
         if (document.fullscreenElement) {
             this._fullscreenElement = document.fullscreenElement;
-            document.exitFullscreen();
+            void document.exitFullscreen();
         }
 
         if (document.activeElement) {
@@ -381,92 +621,135 @@ export default class VideoDataSyncController {
         this._context.mobileVideoOverlayController.forceHide = true;
     }
 
+    private _cleanupPlayBlocker() {
+        if (this._playBlocker) {
+            this._context.video.removeEventListener('play', this._playBlocker);
+            this._playBlocker = undefined;
+        }
+    }
+
+    private _hideAndResume() {
+        this._cleanupPlayBlocker();
+        this._openedLocation = undefined;
+        this._refreshingOpenPicker = false;
+        this._context.keyBindings.bind(this._context);
+        this._context.subtitleController.forceHideSubtitles = false;
+        this._context.mobileVideoOverlayController.forceHide = false;
+        this._frame?.hide();
+
+        if (this._fullscreenElement) {
+            void this._fullscreenElement.requestFullscreen();
+            this._fullscreenElement = undefined;
+        }
+
+        if (this._activeElement) {
+            if (typeof (this._activeElement as HTMLElement).focus === 'function') {
+                (this._activeElement as HTMLElement).focus();
+            }
+
+            this._activeElement = undefined;
+        } else {
+            window.focus();
+        }
+
+        if (!this._wasPaused) {
+            // This can trigger a loop of pause/play when loading subtitles from subtitle picker
+            // while the video is playing due to _playBlocker(). To avoid this, we disable mouseover pause
+            // temporarily until the play() promise resolves. This became an issue with the addition of
+            // PlaybackEngine which moved away from setIntervals() for playback semantics which exposed the core issue.
+            const enablePauseOnHover = this._context.disablePauseOnHover();
+            void this._context.play().finally(enablePauseOnHover);
+        }
+
+        this._wasPaused = undefined;
+    }
+
     private async _syncData(data: VideoDataSubtitleTrack[]) {
         try {
-            let subtitles: SerializedSubtitleFile[] = [];
+            const subtitles: SerializedSubtitleFile[] = [];
 
             for (let i = 0; i < data.length; i++) {
-                const { extension, url, m3U8BaseUrl, language } = data[i];
+                const { extension, url, language, file } = data[i];
+                const generatedSubtitleCacheId = data[i].generatedSubtitleCacheId;
+                if (generatedSubtitleCacheId) {
+                    subtitles.push(await this._generatedSubtitleFile(generatedSubtitleCacheId, data[i].label));
+                    continue;
+                }
                 const subtitleFiles = await this._subtitlesForUrl(
                     this._defaultVideoName(this._syncedData?.basename, data[i]),
                     language,
                     extension,
-                    url,
-                    m3U8BaseUrl
+                    url!,
+                    file !== undefined
                 );
                 if (subtitleFiles !== undefined) {
                     subtitles.push(...subtitleFiles);
                 }
             }
 
-            this._syncSubtitles(
+            await this._syncSubtitles(
                 subtitles,
-                data.some((track) => track.m3U8BaseUrl !== undefined)
+                data.some((track) => typeof track.url === 'object')
             );
             return true;
         } catch (error) {
             if (typeof (error as Error).message !== 'undefined') {
-                this._reportError(`Data Sync failed: ${(error as Error).message}`);
+                await this._reportError(`Data Sync failed: ${(error as Error).message}`);
             }
 
             return false;
         }
     }
 
-    private async _syncDataArray(data: ConfirmedVideoDataSubtitleTrack[]) {
+    private async _syncDataArray(data: ConfirmedVideoDataSubtitleTrack[], syncWithAsbplayerId?: string) {
         try {
-            let subtitles: SerializedSubtitleFile[] = [];
+            const subtitles: SerializedSubtitleFile[] = [];
 
             for (let i = 0; i < data.length; i++) {
-                const { name, language, extension, subtitleUrl, m3U8BaseUrl } = data[i];
-                const subtitleFiles = await this._subtitlesForUrl(name, language, extension, subtitleUrl, m3U8BaseUrl);
+                const { name, language, extension, url, file } = data[i];
+                const generatedSubtitleCacheId = data[i].generatedSubtitleCacheId;
+                if (generatedSubtitleCacheId) {
+                    subtitles.push(await this._generatedSubtitleFile(generatedSubtitleCacheId, name));
+                    continue;
+                }
+                const subtitleFiles = await this._subtitlesForUrl(name, language, extension, url!, file !== undefined);
                 if (subtitleFiles !== undefined) {
                     subtitles.push(...subtitleFiles);
                 }
             }
 
-            this._syncSubtitles(
+            await this._syncSubtitles(
                 subtitles,
-                data.some((track) => track.m3U8BaseUrl !== undefined)
+                data.some((track) => typeof track.url === 'object'),
+                syncWithAsbplayerId
             );
             return true;
         } catch (error) {
             if (typeof (error as Error).message !== 'undefined') {
-                this._reportError(`Data Sync failed: ${(error as Error).message}`);
+                await this._reportError(`Data Sync failed: ${(error as Error).message}`);
             }
 
             return false;
         }
     }
 
-    private async _syncSubtitles(serializedFiles: SerializedSubtitleFile[], flatten: boolean) {
-        if ((await this._settings.getSingle('streamingSubtitleListPreference')) === SubtitleListPreference.app) {
-            const command: VideoToExtensionCommand<ExtensionSyncMessage> = {
-                sender: 'asbplayer-video',
-                message: {
-                    command: 'sync',
-                    subtitles: serializedFiles,
-                    flatten: flatten,
-                },
-                src: this._context.video.src,
-            };
-            chrome.runtime.sendMessage(command);
-        } else {
-            const files: File[] = await Promise.all(
-                serializedFiles.map(
-                    async (f) => new File([await (await fetch('data:text/plain;base64,' + f.base64)).blob()], f.name)
-                )
-            );
-            this._context.loadSubtitles(files, flatten);
-        }
+    private async _syncSubtitles(
+        serializedFiles: SerializedSubtitleFile[],
+        flatten: boolean,
+        syncWithAsbplayerId?: string
+    ) {
+        const files: File[] = await Promise.all(
+            serializedFiles.map(async (f) => new File([base64ToBlob(f.base64, 'text/plain')], f.name))
+        );
+        await this._context.loadSubtitles(files, flatten, syncWithAsbplayerId);
     }
 
     private async _subtitlesForUrl(
         name: string,
-        language: string,
+        language: string | undefined,
         extension: string,
-        url: string,
-        m3U8BaseUrl?: string
+        url: string | string[],
+        localFile: boolean | undefined
     ): Promise<SerializedSubtitleFile[] | undefined> {
         if (url === '-') {
             return [
@@ -478,76 +761,82 @@ export default class VideoDataSyncController {
         }
 
         if (url === 'lazy') {
+            if (language === undefined) {
+                await this._reportError('Unable to determine language');
+                return undefined;
+            }
+
             const data = await fetchDataForLanguageOnDemand(language);
 
             if (data.error) {
-                this._reportError(data.error);
+                await this._reportError(data.error);
                 return undefined;
             }
 
             const lazilyFetchedUrl = data.subtitles?.find((t) => t.language === language)?.url;
 
             if (lazilyFetchedUrl === undefined) {
-                this._reportError('Failed to fetch subtitles for specified language');
+                await this._reportError('Failed to fetch subtitles for specified language');
                 return undefined;
             }
 
             url = lazilyFetchedUrl;
         }
 
-        const response = await fetch(url).catch((error) => {
-            this._reportError(error.message);
-        });
+        if (typeof url === 'string') {
+            const response = await fetch(url)
+                .catch((error) => this._reportError(error.message))
+                .finally(() => {
+                    if (localFile) {
+                        URL.revokeObjectURL(url);
+                    }
+                });
 
-        if (!response) {
-            return undefined;
-        }
-
-        if (extension === 'm3u8') {
-            const m3U8Response = await fetch(url);
-            const parser = new m3U8Parser();
-            parser.push(await m3U8Response.text());
-            parser.end();
-
-            if (!parser.manifest.segments || parser.manifest.segments.length === 0) {
+            if (!response) {
                 return undefined;
             }
 
-            const firstUri = parser.manifest.segments[0].uri;
-            const partExtension = firstUri.substring(firstUri.lastIndexOf('.') + 1);
-            const promises = parser.manifest.segments
-                .filter((s: any) => !s.discontinuity && s.uri)
-                .map((s: any) => fetch(`${m3U8BaseUrl}/${s.uri}`));
-            const tracks = [];
-
-            for (const p of promises) {
-                const response = await p;
-
-                if (!response.ok) {
-                    throw new Error(
-                        `Subtitle Retrieval failed with Status ${response.status}/${response.statusText}...`
-                    );
-                }
-
-                tracks.push({
-                    name: `${name}.${partExtension}`,
-                    base64: bufferToBase64(await response.arrayBuffer()),
-                });
+            if (!response.ok) {
+                throw new Error(`Subtitle Retrieval failed with Status ${response.status}/${response.statusText}...`);
             }
 
-            return tracks;
+            return [
+                {
+                    name: `${name}.${extension}`,
+                    base64: response ? bufferToBase64(await response.arrayBuffer()) : '',
+                },
+            ];
         }
 
-        if (!response.ok) {
-            throw new Error(`Subtitle Retrieval failed with Status ${response.status}/${response.statusText}...`);
+        // `url` is an array
+
+        const firstUri = url[0];
+        const partExtension = subtitleFileExtensionForUrl(firstUri, extension);
+        const fileName = `${name}.${partExtension}`;
+        const promises = url.map((u) => fetch(u));
+        const tracks = [];
+        const totalPromises = promises.length;
+        let finishedPromises = 0;
+
+        for (const p of promises) {
+            const response = await p;
+
+            if (!response.ok) {
+                throw new Error(`Subtitle Retrieval failed with Status ${response.status}/${response.statusText}...`);
+            }
+
+            ++finishedPromises;
+            this._context.subtitleController.notification({
+                text: `${fileName} (${Math.floor((finishedPromises / totalPromises) * 100)}%)`,
+            });
+
+            tracks.push({
+                name: fileName,
+                base64: bufferToBase64(await response.arrayBuffer()),
+            });
         }
 
-        return [
-            {
-                name: `${name}.${extension}`,
-                base64: response ? bufferToBase64(await response.arrayBuffer()) : '',
-            },
-        ];
+        return tracks;
     }
 
     private async _reportError(error: string) {
@@ -556,26 +845,161 @@ export default class VideoDataSyncController {
 
         this._prepareShow();
 
-        const subtitleTrackChoices = this._syncedData?.subtitles ?? [];
-        let selectedSub: VideoDataSubtitleTrack[] = [this._emptySubtitle, this._emptySubtitle, this._emptySubtitle];
-        for (let i = 0; i < this.lastLanguageSynced.length; i++) {
-            const language = this.lastLanguageSynced[i];
-            for (let j = 0; j < subtitleTrackChoices.length; j++) {
-                if (language === subtitleTrackChoices[j].language) {
-                    selectedSub[i] = subtitleTrackChoices[j];
-                    break;
-                }
-            }
-        }
-
         return client.updateState({
             open: true,
             isLoading: false,
-            showSubSelect: true,
-            subtitles: this._syncedData?.subtitles || [],
-            selectedSubtitle: selectedSub.map((subtitle) => subtitle.language) || '-',
             error,
             themeType: themeType,
         });
+    }
+
+    private _subtitleGenerationSourceUrl() {
+        if (this._isTutorial || isMobile || !['http:', 'https:'].includes(window.location.protocol)) {
+            return undefined;
+        }
+
+        return window.location.href;
+    }
+
+    private async _requestSubtitleGeneration(message: SubtitleGenerationMessage): Promise<SubtitleGenerationResponse> {
+        return browser.runtime.sendMessage({
+            sender: 'asbplayer-video',
+            src: this._context.registeredVideoSrc,
+            message,
+        });
+    }
+
+    private _generatedTrack(entry: GeneratedSubtitleCacheEntry): VideoDataSubtitleTrack {
+        return {
+            id: `whisper-cache:${entry.id}`,
+            label: entry.label,
+            language: 'generated',
+            extension: 'srt',
+            generatedSubtitleCacheId: entry.id,
+        };
+    }
+
+    private async _refreshGeneratedSubtitleTracks() {
+        const sourceUrl = this._subtitleGenerationSourceUrl();
+        if (!sourceUrl || this.openedLocation !== sourceUrl) return;
+
+        const response = await this._requestSubtitleGeneration({
+            command: 'subtitle-generation',
+            operation: 'cached',
+            sourceUrl,
+        });
+        if (response.error || !response.entries?.length || this.openedLocation !== sourceUrl) return;
+
+        const existing = this._syncedData?.subtitles ?? [];
+        const newTracks = response.entries
+            .map((entry) => this._generatedTrack(entry))
+            .filter((track) => !existing.some((existingTrack) => existingTrack.id === track.id));
+        if (!newTracks.length) return;
+
+        this._syncedData = {
+            basename: this._syncedData?.basename ?? document.title,
+            subtitles: [...existing, ...newTracks],
+        };
+        this._frame.clientIfLoaded?.updateState({
+            subtitles: this._syncedData.subtitles,
+            generatedSubtitleEntryId: newTracks[0].id,
+        });
+    }
+
+    private async _handleSubtitleGenerationMessage(message: SubtitleGenerationMessage) {
+        const sourceUrl = this._subtitleGenerationSourceUrl();
+        if (!sourceUrl || this.openedLocation !== sourceUrl) {
+            await this._frame.client().then((client) =>
+                client.updateState({
+                    subtitleGeneration: {
+                        state: 'failed',
+                        error: 'The video changed before subtitles could be generated.',
+                    },
+                })
+            );
+            return;
+        }
+
+        if (message.operation === 'capabilities') {
+            this._frame.clientIfLoaded?.updateState({ subtitleGeneration: { sourceUrl, state: 'loading' } });
+        }
+
+        const response = await this._requestSubtitleGeneration({ ...message, sourceUrl });
+        if (response.error) {
+            this._frame.clientIfLoaded?.updateState({
+                subtitleGeneration: { sourceUrl, state: 'failed', error: response.error },
+            });
+            return;
+        }
+
+        if (response.job) {
+            this._generationJobId =
+                response.job.state === 'completed' ||
+                response.job.state === 'cancelled' ||
+                response.job.state === 'failed'
+                    ? undefined
+                    : response.job.id;
+            this._frame.clientIfLoaded?.updateState({
+                subtitleGeneration: { sourceUrl, state: response.job.state, job: response.job },
+            });
+
+            if (response.job.entry) {
+                const track = this._generatedTrack(response.job.entry);
+                const existing = this._syncedData?.subtitles ?? [];
+                const subtitles = existing.some((existingTrack) => existingTrack.id === track.id)
+                    ? existing
+                    : [...existing, track];
+                this._syncedData = { basename: this._syncedData?.basename ?? document.title, subtitles };
+                this._frame.clientIfLoaded?.updateState({
+                    subtitles,
+                    generatedSubtitleEntryId: track.id,
+                });
+
+                // A completed generated track is the user's explicit selection.
+                // Apply it through the same cache-backed subtitle path as the
+                // selector's Confirm action, then dismiss both generation and
+                // selector dialogs. Multiple in-flight status polls can report
+                // the completed job, so only apply a cache entry once.
+                if (
+                    response.job.state === 'completed' &&
+                    this._applyingGeneratedSubtitleCacheId !== response.job.entry.id
+                ) {
+                    this._applyingGeneratedSubtitleCacheId = response.job.entry.id;
+                    const dataWasSynced = await this._syncData([track]);
+                    if (dataWasSynced) {
+                        this._hideAndResume();
+                    } else {
+                        this._applyingGeneratedSubtitleCacheId = undefined;
+                    }
+                }
+            }
+            return;
+        }
+
+        if (response.capabilities) {
+            this._frame.clientIfLoaded?.updateState({
+                subtitleGeneration: { sourceUrl, state: 'ready', capabilities: response.capabilities },
+            });
+        }
+    }
+
+    private async _generatedSubtitleFile(cacheEntryId: string, fallbackName: string): Promise<SerializedSubtitleFile> {
+        const response = await this._requestSubtitleGeneration({
+            command: 'subtitle-generation',
+            operation: 'download',
+            cacheEntryId,
+        });
+        if (!response.srtBase64) {
+            throw new Error(response.error ?? 'Unable to retrieve generated subtitles.');
+        }
+
+        return { name: response.fileName || `${fallbackName}.srt`, base64: response.srtBase64 };
+    }
+
+    private _cancelActiveGeneration() {
+        if (!this._generationJobId) return;
+        const jobId = this._generationJobId;
+        this._generationJobId = undefined;
+        void this._requestSubtitleGeneration({ command: 'subtitle-generation', operation: 'cancel', jobId });
     }
 }

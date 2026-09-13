@@ -1,12 +1,13 @@
 import { v4 as uuidv4 } from 'uuid';
-import Bridge from '../ui/bridge';
-import { Message } from '@project/common';
+import type Bridge from '@project/extension/src/ui/bridge';
+import type { Message } from '@project/common';
 
 export default class FrameBridgeServer {
     private readonly _bridge: Bridge;
     private _frameId?: string;
     private _windowMessageListener?: (event: MessageEvent) => void;
-    private _unbindServerListener?: () => void;
+    private _unbindServerMessageListener?: () => void;
+    private _unbindServerReadyListener?: () => void;
 
     constructor(bridge: Bridge) {
         this._bridge = bridge;
@@ -30,17 +31,19 @@ export default class FrameBridgeServer {
                     break;
             }
         };
-        this._unbindServerListener = this._bridge.addServerMessageListener((message: Message) => {
+        this._unbindServerMessageListener = this._bridge.addServerMessageListener((message: Message) => {
             this._postMessage({
                 command: 'onServerMessage',
                 message: message,
             });
         });
-        window.addEventListener('message', this._windowMessageListener);
-        this._postMessage({
-            command: 'ready',
-            frameId: this._frameId,
+        this._unbindServerReadyListener = this._bridge.addServerReadyListener(() => {
+            this._postMessage({
+                command: 'ready',
+                frameId: this._frameId,
+            });
         });
+        window.addEventListener('message', this._windowMessageListener);
     }
 
     _postMessage(message: any) {
@@ -58,6 +61,7 @@ export default class FrameBridgeServer {
             window.removeEventListener('message', this._windowMessageListener);
         }
 
-        this._unbindServerListener?.();
+        this._unbindServerMessageListener?.();
+        this._unbindServerReadyListener?.();
     }
 }

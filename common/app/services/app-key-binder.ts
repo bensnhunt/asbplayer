@@ -1,6 +1,10 @@
-import { CopySubtitleMessage, PostMineAction, SubtitleModel } from '@project/common';
-import { DefaultKeyBinder, KeyBinder } from '@project/common/key-binder';
-import ChromeExtension, { ExtensionMessage } from './chrome-extension';
+import { asbError } from '@project/common/util';
+import type { CopySubtitleMessage, SubtitleModel } from '@project/common';
+import { PostMineAction } from '@project/common';
+import type { DefaultKeyBinder, KeyBinder } from '@project/common/key-binder';
+import type { SeekableTracks, TokenStatus } from '@project/common/settings';
+import type { ExtensionMessage } from '@project/common/app/services/chrome-extension';
+import type ChromeExtension from '@project/common/app/services/chrome-extension';
 
 export default class AppKeyBinder implements KeyBinder {
     private readonly defaultKeyBinder: DefaultKeyBinder;
@@ -8,7 +12,10 @@ export default class AppKeyBinder implements KeyBinder {
     private readonly copyHandlers: ((event: KeyboardEvent) => void)[] = [];
     private readonly ankiExportHandlers: ((event: KeyboardEvent) => void)[] = [];
     private readonly updateLastCardHandlers: ((event: KeyboardEvent) => void)[] = [];
+    private readonly exportCardHandlers: ((event: KeyboardEvent) => void)[] = [];
     private readonly takeScreenshotHandlers: ((event: KeyboardEvent) => void)[] = [];
+    private readonly toggleRecordingHandlers: ((event: KeyboardEvent) => void)[] = [];
+    private readonly selectSubtitleTrackHandlers: ((event: KeyboardEvent) => void)[] = [];
     private _unsubscribeExtension?: () => void;
 
     constructor(keyBinder: DefaultKeyBinder, extension: ChromeExtension) {
@@ -31,11 +38,18 @@ export default class AppKeyBinder implements KeyBinder {
                         case PostMineAction.updateLastCard:
                             handlers = this.updateLastCardHandlers;
                             break;
+                        case PostMineAction.exportCard:
+                            handlers = this.exportCardHandlers;
+                            break;
                         default:
-                            console.error('Unknown post mine action ' + command.postMineAction);
+                            asbError('app/messages', 'Unknown post mine action ' + command.postMineAction);
                     }
                 } else if (message.data.command === 'take-screenshot') {
                     handlers = this.takeScreenshotHandlers;
+                } else if (message.data.command === 'toggle-recording') {
+                    handlers = this.toggleRecordingHandlers;
+                } else if (message.data.command === 'toggle-video-select') {
+                    handlers = this.selectSubtitleTrackHandlers;
                 }
 
                 if (handlers !== undefined) {
@@ -97,6 +111,22 @@ export default class AppKeyBinder implements KeyBinder {
         return this.defaultKeyBinder.bindUpdateLastCard(onUpdateLastCard, disabledGetter, useCapture);
     }
 
+    bindExportCard(
+        onExportCard: (event: KeyboardEvent) => void,
+        disabledGetter: () => boolean,
+        useCapture?: boolean | undefined
+    ): () => void {
+        if (this.extension.installed) {
+            const handler = this.defaultKeyBinder.exportCardHandler(onExportCard, disabledGetter);
+            this.exportCardHandlers.push(handler);
+            return () => {
+                this._remove(handler, this.exportCardHandlers);
+            };
+        }
+
+        return this.defaultKeyBinder.bindExportCard(onExportCard, disabledGetter, useCapture);
+    }
+
     bindTakeScreenshot(
         onTakeScreenshot: (event: KeyboardEvent) => void,
         disabledGetter: () => boolean,
@@ -113,6 +143,38 @@ export default class AppKeyBinder implements KeyBinder {
         return this.defaultKeyBinder.bindTakeScreenshot(onTakeScreenshot, disabledGetter, useCapture);
     }
 
+    bindToggleRecording(
+        onToggleRecording: (event: KeyboardEvent) => void,
+        disabledGetter: () => boolean,
+        useCapture?: boolean | undefined
+    ): () => void {
+        if (this.extension.installed) {
+            const handler = this.defaultKeyBinder.toggleRecordingHandler(onToggleRecording, disabledGetter);
+            this.toggleRecordingHandlers.push(handler);
+            return () => {
+                this._remove(handler, this.toggleRecordingHandlers);
+            };
+        }
+
+        return this.defaultKeyBinder.bindToggleRecording(onToggleRecording, disabledGetter, useCapture);
+    }
+
+    bindSelectSubtitleTrack(
+        onSelectSubtitleTrack: (event: KeyboardEvent) => void,
+        disabledGetter: () => boolean,
+        useCapture?: boolean | undefined
+    ): () => void {
+        if (this.extension.installed) {
+            const handler = this.defaultKeyBinder.selectSubtitleTrackHandler(onSelectSubtitleTrack, disabledGetter);
+            this.selectSubtitleTrackHandlers.push(handler);
+            return () => {
+                this._remove(handler, this.selectSubtitleTrackHandlers);
+            };
+        }
+
+        return this.defaultKeyBinder.bindSelectSubtitleTrack(onSelectSubtitleTrack, disabledGetter, useCapture);
+    }
+
     private _remove(callback: (event: KeyboardEvent) => void, list: ((event: KeyboardEvent) => void)[]) {
         for (let i = list.length - 1; i >= 0; --i) {
             if (callback === list[i]) {
@@ -127,6 +189,7 @@ export default class AppKeyBinder implements KeyBinder {
         disabledGetter: () => boolean,
         timeGetter: () => number,
         subtitlesGetter: () => SubtitleModel[] | undefined,
+        seekableTracksGetter: () => SeekableTracks,
         useCapture?: boolean | undefined
     ): () => void {
         return this.defaultKeyBinder.bindSeekToSubtitle(
@@ -134,6 +197,7 @@ export default class AppKeyBinder implements KeyBinder {
             disabledGetter,
             timeGetter,
             subtitlesGetter,
+            seekableTracksGetter,
             useCapture
         );
     }
@@ -143,6 +207,7 @@ export default class AppKeyBinder implements KeyBinder {
         disabledGetter: () => boolean,
         timeGetter: () => number,
         subtitlesGetter: () => SubtitleModel[] | undefined,
+        seekableTracksGetter: () => SeekableTracks,
         useCapture?: boolean | undefined
     ): () => void {
         return this.defaultKeyBinder.bindSeekToBeginningOfCurrentSubtitle(
@@ -150,6 +215,7 @@ export default class AppKeyBinder implements KeyBinder {
             disabledGetter,
             timeGetter,
             subtitlesGetter,
+            seekableTracksGetter,
             useCapture
         );
     }
@@ -167,6 +233,7 @@ export default class AppKeyBinder implements KeyBinder {
         disabledGetter: () => boolean,
         timeGetter: () => number,
         subtitlesGetter: () => SubtitleModel[] | undefined,
+        seekableTracksGetter: () => SeekableTracks,
         useCapture?: boolean | undefined
     ): () => void {
         return this.defaultKeyBinder.bindOffsetToSubtitle(
@@ -174,6 +241,7 @@ export default class AppKeyBinder implements KeyBinder {
             disabledGetter,
             timeGetter,
             subtitlesGetter,
+            seekableTracksGetter,
             useCapture
         );
     }
@@ -231,12 +299,40 @@ export default class AppKeyBinder implements KeyBinder {
         );
     }
 
-    bindToggleBlurTrack(
-        onToggleBlurTrack: (event: KeyboardEvent, track: number) => void,
+    bindUnblurTrack(
+        onUnblurTrack: (event: KeyboardEvent, track: number) => void,
         disabledGetter: () => boolean,
         useCapture?: boolean | undefined
     ): () => void {
-        return this.defaultKeyBinder.bindToggleBlurTrack(onToggleBlurTrack, disabledGetter, useCapture);
+        return this.defaultKeyBinder.bindUnblurTrack(onUnblurTrack, disabledGetter, useCapture);
+    }
+
+    bindMarkHoveredToken(
+        onMarkHoveredToken: (event: KeyboardEvent, tokenStatus: TokenStatus) => void,
+        disabledGetter: () => boolean,
+        useCapture?: boolean | undefined
+    ): () => void {
+        return this.defaultKeyBinder.bindMarkHoveredToken(onMarkHoveredToken, disabledGetter, useCapture);
+    }
+
+    bindToggleHoveredTokenIgnored(
+        onToggleHoveredTokenIgnored: (event: KeyboardEvent) => void,
+        disabledGetter: () => boolean,
+        useCapture?: boolean | undefined
+    ): () => void {
+        return this.defaultKeyBinder.bindToggleHoveredTokenIgnored(
+            onToggleHoveredTokenIgnored,
+            disabledGetter,
+            useCapture
+        );
+    }
+
+    bindOpenStatistics(
+        onOpenStatistics: (event: KeyboardEvent) => void,
+        disabledGetter: () => boolean,
+        useCapture?: boolean | undefined
+    ): () => void {
+        return this.defaultKeyBinder.bindOpenStatistics(onOpenStatistics, disabledGetter, useCapture);
     }
 
     bindPlay(
@@ -285,6 +381,54 @@ export default class AppKeyBinder implements KeyBinder {
         useCapture?: boolean | undefined
     ): () => void {
         return this.defaultKeyBinder.bindToggleRepeat(onToggleRepeat, disabledGetter, useCapture);
+    }
+
+    bindCycleAutoPauseResumeMode(
+        onCycleAutoPauseResumeMode: (event: KeyboardEvent) => void,
+        disabledGetter: () => boolean,
+        useCapture?: boolean | undefined
+    ): () => void {
+        return this.defaultKeyBinder.bindCycleAutoPauseResumeMode(
+            onCycleAutoPauseResumeMode,
+            disabledGetter,
+            useCapture
+        );
+    }
+
+    bindToggleSubtitleVisibility(
+        onToggleSubtitleVisibility: (event: KeyboardEvent) => void,
+        disabledGetter: () => boolean,
+        useCapture?: boolean | undefined
+    ): () => void {
+        return this.defaultKeyBinder.bindToggleSubtitleVisibility(
+            onToggleSubtitleVisibility,
+            disabledGetter,
+            useCapture
+        );
+    }
+
+    bindAdjustSubtitlePositionOffset(
+        onAdjustSubtitlePositionOffset: (event: KeyboardEvent, increase: boolean) => void,
+        disabledGetter: () => boolean,
+        useCapture?: boolean | undefined
+    ): () => void {
+        return this.defaultKeyBinder.bindAdjustSubtitlePositionOffset(
+            onAdjustSubtitlePositionOffset,
+            disabledGetter,
+            useCapture
+        );
+    }
+
+    bindAdjustTopSubtitlePositionOffset(
+        onAdjustTopSubtitlePositionOffset: (event: KeyboardEvent, increase: boolean) => void,
+        disabledGetter: () => boolean,
+        useCapture?: boolean | undefined
+    ): () => void {
+        return this.defaultKeyBinder.bindAdjustTopSubtitlePositionOffset(
+            onAdjustTopSubtitlePositionOffset,
+            disabledGetter,
+            useCapture
+        );
     }
 
     unsubscribeExtension() {

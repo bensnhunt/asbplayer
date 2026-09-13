@@ -1,15 +1,16 @@
-import React, { useEffect, useRef, useState } from 'react';
-import TextField from '@material-ui/core/TextField';
-import MenuItem from '@material-ui/core/MenuItem';
+import { useEffect, useRef, useState } from 'react';
+import TextField from '@mui/material/TextField';
+import MenuItem from '@mui/material/MenuItem';
 import { useTranslation } from 'react-i18next';
-import InputAdornment from '@material-ui/core/InputAdornment';
-import IconButton from '@material-ui/core/IconButton';
-import CheckIcon from '@material-ui/icons/Check';
-import ClearIcon from '@material-ui/icons/Clear';
-import DeleteIcon from '@material-ui/icons/Delete';
-import { makeStyles, Theme } from '@material-ui/core/styles';
-import { Profile } from '../settings';
-import { TFunction } from 'i18next';
+import InputAdornment from '@mui/material/InputAdornment';
+import IconButton from '@mui/material/IconButton';
+import CheckIcon from '@mui/icons-material/Check';
+import ClearIcon from '@mui/icons-material/Clear';
+import DeleteIcon from '@mui/icons-material/Delete';
+import { makeStyles } from '@mui/styles';
+import type { Theme } from '@mui/material';
+import type { Profile } from '@project/common/settings';
+import type { TFunction } from 'i18next';
 
 const maxProfileNameLength = 16;
 const maxProfiles = 5;
@@ -22,7 +23,7 @@ interface Props {
     onSetActiveProfile: (name: string | undefined) => void;
 }
 
-const useStyles = makeStyles({
+const useStyles = makeStyles(() => ({
     newProfileTextField: {
         '& .MuiInputBase-root': {
             paddingRight: 0,
@@ -33,7 +34,7 @@ const useStyles = makeStyles({
             padding: 0,
         },
     },
-});
+}));
 
 interface ProfileMenuStyleProps {
     collapsed: boolean;
@@ -49,7 +50,7 @@ interface ProfileMenuItemProps {
     className: string;
 }
 
-const useMenuItemStyles = makeStyles<Theme, ProfileMenuStyleProps>({
+const useMenuItemStyles = makeStyles<Theme, ProfileMenuStyleProps>(() => ({
     root: ({ collapsed }) =>
         collapsed
             ? {
@@ -59,7 +60,7 @@ const useMenuItemStyles = makeStyles<Theme, ProfileMenuStyleProps>({
                   margin: 0,
               }
             : { margin: 0 },
-});
+}));
 
 // MUI requires <MenuItem> to be a direct descendent of the parent select menu.
 // So this function is not itself a component, but returns the <MenuItem> component instead.
@@ -73,7 +74,13 @@ function renderMenuItem({
     className,
 }: ProfileMenuItemProps) {
     return (
-        <MenuItem key={profile?.name ?? ''} className={className} divider={divider} value={profile?.name ?? '-'}>
+        <MenuItem
+            key={profile?.name ?? ''}
+            className={className}
+            divider={divider}
+            value={profile?.name ?? '-'}
+            style={{ minHeight: 'auto' }}
+        >
             <div
                 onClick={(e) => {
                     if (e.currentTarget === e.target) {
@@ -85,10 +92,10 @@ function renderMenuItem({
                 {profile?.name ?? t('settings.defaultProfile')}
             </div>
 
-            {profile !== undefined && (
+            {profile !== undefined && !collapsed && (
                 <IconButton
                     onMouseDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
+                    onClick={() => {
                         onRemoveProfile(profile.name);
                     }}
                     style={{ padding: 4, marginRight: collapsed ? 16 : 0 }}
@@ -113,7 +120,7 @@ export default function SettingsProfileSelectMenu({
     const expandedMenuItemStyles = useMenuItemStyles({ collapsed: false });
 
     const [addingNewProfile, setAddingNewProfile] = useState<boolean>(false);
-    const newProfileInput = useRef<HTMLInputElement>();
+    const newProfileInput = useRef<HTMLInputElement>(undefined);
     const [newProfile, setNewProfile] = useState<string>('');
     const trimmed = newProfile.trim();
     const validNewProfile =
@@ -154,38 +161,41 @@ export default function SettingsProfileSelectMenu({
                     }}
                     className={classes.newProfileTextField}
                     fullWidth
-                    size="small"
-                    color="secondary"
+                    color="primary"
                     variant="outlined"
                     style={{ paddingRight: 0 }}
                     label={t('settings.profileName')}
-                    placeholder={t('settings.enterProfileName')!}
+                    placeholder={t('settings.enterProfileName')}
                     value={newProfile}
                     onChange={(e) => {
                         setNewProfile(e.target.value);
                     }}
-                    inputProps={{ maxLength: maxProfileNameLength }}
-                    InputProps={{
-                        endAdornment: (
-                            <InputAdornment position="end">
-                                <IconButton
-                                    onClick={() => {
-                                        setAddingNewProfile(false);
-                                    }}
-                                >
-                                    <ClearIcon fontSize="small" />
-                                </IconButton>
-                                <IconButton
-                                    disabled={!validNewProfile}
-                                    onClick={() => {
-                                        setAddingNewProfile(false);
-                                        onNewProfile(newProfile.trim());
-                                    }}
-                                >
-                                    <CheckIcon fontSize="small" />
-                                </IconButton>
-                            </InputAdornment>
-                        ),
+                    slotProps={{
+                        htmlInput: {
+                            maxLength: maxProfileNameLength,
+                        },
+                        input: {
+                            endAdornment: (
+                                <InputAdornment position="end">
+                                    <IconButton
+                                        onClick={() => {
+                                            setAddingNewProfile(false);
+                                        }}
+                                    >
+                                        <ClearIcon fontSize="small" />
+                                    </IconButton>
+                                    <IconButton
+                                        disabled={!validNewProfile}
+                                        onClick={() => {
+                                            setAddingNewProfile(false);
+                                            onNewProfile(newProfile.trim());
+                                        }}
+                                    >
+                                        <CheckIcon fontSize="small" />
+                                    </IconButton>
+                                </InputAdornment>
+                            ),
+                        },
                     }}
                 />
             )}
@@ -195,7 +205,7 @@ export default function SettingsProfileSelectMenu({
                     fullWidth
                     className={classes.menu}
                     size="small"
-                    color="secondary"
+                    color="primary"
                     variant="outlined"
                     label={t('settings.activeProfile')}
                     value={activeProfile ?? '-'}
@@ -213,7 +223,12 @@ export default function SettingsProfileSelectMenu({
                         },
                     }}
                 >
-                    <MenuItem key={''} value={'-'} onClick={() => onSetActiveProfile(undefined)}>
+                    <MenuItem
+                        key={''}
+                        value={'-'}
+                        onClick={() => onSetActiveProfile(undefined)}
+                        style={{ minHeight: 'auto' }}
+                    >
                         {t('settings.defaultProfile')}
                     </MenuItem>
                     {profiles.map((profile, index) => {
@@ -233,7 +248,7 @@ export default function SettingsProfileSelectMenu({
                             setNewProfile('');
                             setAddingNewProfile(true);
                         }}
-                        style={{ textAlign: 'center' }}
+                        style={{ minHeight: 'auto', textAlign: 'center' }}
                     >
                         {limitReached ? t('settings.profileLimitReached') : t('settings.newProfile')}
                     </MenuItem>

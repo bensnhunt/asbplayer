@@ -1,7 +1,9 @@
-import React, { useMemo } from 'react';
-import { makeStyles, Theme } from '@material-ui/core/styles';
-import { SubtitleSettings, TextSubtitleSettings, textSubtitleSettingsForTrack } from '../settings';
-import { computeStyles } from '../util';
+import { useMemo } from 'react';
+import { makeStyles } from '@mui/styles';
+import type { Theme } from '@mui/material';
+import type { SubtitleSettings, TextSubtitleSettings } from '@project/common/settings';
+import { textSubtitleSettingsForTrack } from '@project/common/settings';
+import { computeStyles } from '@project/common/util';
 
 interface Props {
     subtitleSettings: SubtitleSettings;
@@ -58,6 +60,7 @@ const SubtitlePreviewInput = ({ text, className, textSubtitleSettings, onTextCha
         subtitleFontFamily,
         subtitleCustomStyles,
         subtitleBlur,
+        subtitleAlignment,
     } = textSubtitleSettings;
 
     const subtitlePreviewStyles = useMemo(
@@ -75,6 +78,7 @@ const SubtitlePreviewInput = ({ text, className, textSubtitleSettings, onTextCha
                 subtitleFontFamily,
                 subtitleCustomStyles,
                 subtitleBlur,
+                subtitleAlignment,
             }),
         [
             subtitleColor,
@@ -89,6 +93,7 @@ const SubtitlePreviewInput = ({ text, className, textSubtitleSettings, onTextCha
             subtitleFontFamily,
             subtitleCustomStyles,
             subtitleBlur,
+            subtitleAlignment,
         ]
     );
 

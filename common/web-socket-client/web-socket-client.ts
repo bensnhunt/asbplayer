@@ -1,28 +1,104 @@
+import { asbError, asbInfo, asbLog } from '@project/common/util';
+import type { SubtitleTrack } from '@project/common/src/model';
+
+export type { SubtitleTrack };
+
 export interface MineSubtitleCommand {
     command: 'mine-subtitle';
     messageId: string;
     body: {
         fields: { [key: string]: string };
         postMineAction: number;
+        mediaId?: string;
+        noteId?: number;
     };
 }
 
-interface MineSubtitleResponse {
+interface Response<T> {
     command: 'response';
     messageId: string;
+    body: T;
+}
+
+interface MineSubtitleResponseBody {
+    published: boolean;
+}
+
+type LoadSubtitlesResponseBody = Record<string, never>;
+
+export interface SubtitleFile {
+    base64: string;
+    name: string;
+}
+
+export interface LoadSubtitlesCommand {
+    command: 'load-subtitles';
+    messageId: string;
     body: {
-        published: boolean;
+        files?: SubtitleFile[];
     };
+}
+
+export interface SeekTimestampCommand {
+    command: 'seek-timestamp';
+    messageId: string;
+    body: {
+        timestamp: number;
+        mediaId?: string;
+    };
+}
+
+export interface GetBoundMediaCommand {
+    command: 'get-bound-media';
+    messageId: string;
+    body: Record<string, never>;
+}
+
+export interface BoundMedia {
+    id: string; // Derived from a hash of `streaming:<tabId>:<src>` or `local:<asbplayerId>`.
+    type: 'streaming' | 'local';
+    title?: string;
+    faviconUrl?: string;
+    loadedSubtitles: SubtitleTrack[];
+    active: boolean;
+}
+
+interface GetBoundMediaResponseBody {
+    media: BoundMedia[];
+}
+
+export interface GetSubtitlesCommand {
+    command: 'get-subtitles';
+    messageId: string;
+    body: {
+        mediaId?: string;
+        trackNumbers?: number[];
+    };
+}
+
+export interface SubtitleCue {
+    text: string;
+    start: number;
+    end: number;
+    track: number;
+}
+
+interface GetSubtitlesResponseBody {
+    subtitles: SubtitleCue[];
 }
 
 export class WebSocketClient {
     private _socket?: WebSocket;
-    private _pingInterval?: NodeJS.Timeout;
+    private _pingInterval?: ReturnType<typeof setInterval>;
     private _lastPingTimestampMs?: number;
     private _pongReceived: boolean = false;
     private _pingPromises: { resolve: (value: unknown) => void; reject: (error: any) => void }[] = [];
     private _connectPromise?: { resolve: (value: unknown) => void; reject: (error: any) => void };
     onMineSubtitle?: (command: MineSubtitleCommand) => Promise<boolean>;
+    onLoadSubtitles?: (command: LoadSubtitlesCommand) => Promise<void>;
+    onSeekTimestamp?: (command: SeekTimestampCommand) => Promise<void>;
+    onGetBoundMedia?: () => Promise<BoundMedia[]>;
+    onGetSubtitles?: (mediaId: string | undefined, trackNumbers: number[] | undefined) => Promise<SubtitleCue[]>;
 
     get socket() {
         return this._socket;
@@ -34,17 +110,20 @@ export class WebSocketClient {
         }
 
         this._pingInterval = setInterval(() => {
-            if (this._lastPingTimestampMs !== undefined && !this._pongReceived) {
-                console.log('Did not receive pong - reconnecting');
+            if (
+                (this._lastPingTimestampMs !== undefined && !this._pongReceived) ||
+                (this._socket && this._socket.readyState !== this._socket?.OPEN)
+            ) {
+                asbLog('web-socket', 'Did not receive pong - reconnecting');
 
                 for (const r of this._pingPromises) {
                     r.reject('Timed out');
                 }
 
                 this._pingPromises = [];
-                this._connect(url);
+                void this._connect(url);
             } else {
-                this.ping().catch(console.info);
+                this.ping().catch((error) => asbInfo('web-socket', error));
             }
         }, 10000);
 
@@ -76,23 +155,70 @@ export class WebSocketClient {
                     if (payload.command === 'mine-subtitle') {
                         const messageId = payload.messageId;
                         const published = (await this.onMineSubtitle?.(payload)) ?? false;
-                        const response: MineSubtitleResponse = { command: 'response', messageId, body: { published } };
+                        const response: Response<MineSubtitleResponseBody> = {
+                            command: 'response',
+                            messageId,
+                            body: { published },
+                        };
                         this._socket?.send(JSON.stringify(response));
+                    } else if (payload.command === 'load-subtitles') {
+                        const messageId = payload.messageId;
+                        await this.onLoadSubtitles?.(payload);
+                        const response: Response<LoadSubtitlesResponseBody> = {
+                            command: 'response',
+                            messageId,
+                            body: {},
+                        };
+                        this._socket?.send(JSON.stringify(response));
+                    } else if (payload.command === 'seek-timestamp') {
+                        const messageId = payload.messageId;
+                        await this.onSeekTimestamp?.(payload);
+                        const response: Response<Record<string, never>> = {
+                            command: 'response',
+                            messageId,
+                            body: {},
+                        };
+                        this._socket?.send(JSON.stringify(response));
+                    } else if (payload.command === 'get-bound-media') {
+                        if (this.onGetBoundMedia !== undefined) {
+                            const messageId = payload.messageId;
+                            const media = await this.onGetBoundMedia();
+                            const response: Response<GetBoundMediaResponseBody> = {
+                                command: 'response',
+                                messageId,
+                                body: { media },
+                            };
+                            this._socket?.send(JSON.stringify(response));
+                        }
+                    } else if (payload.command === 'get-subtitles') {
+                        if (this.onGetSubtitles !== undefined) {
+                            const messageId = payload.messageId;
+                            const subtitles = await this.onGetSubtitles(
+                                payload.body?.mediaId,
+                                payload.body?.trackNumbers
+                            );
+                            const response: Response<GetSubtitlesResponseBody> = {
+                                command: 'response',
+                                messageId,
+                                body: { subtitles },
+                            };
+                            this._socket?.send(JSON.stringify(response));
+                        }
                     }
                 }
             };
             socket.onclose = (event) => {
-                console.log(`Socket closed - reason: ${event.reason}`);
+                asbLog('web-socket', `Socket closed - reason: ${event.reason}`);
                 this._connectPromise?.reject('Socket closed');
                 this._connectPromise = undefined;
             };
             socket.onerror = () => {
-                console.log('Socket error');
+                asbLog('web-socket', 'Socket error');
                 this._connectPromise?.reject('Socket error');
                 this._connectPromise = undefined;
             };
             socket.onopen = () => {
-                this.ping().catch(console.error);
+                this.ping().catch((error) => asbError('web-socket', error));
                 this._connectPromise?.resolve(undefined);
                 this._connectPromise = undefined;
             };
@@ -145,5 +271,9 @@ export class WebSocketClient {
         this._connectPromise?.reject('Disconnecting');
         this._connectPromise = undefined;
         this.onMineSubtitle = undefined;
+        this.onSeekTimestamp = undefined;
+        this.onLoadSubtitles = undefined;
+        this.onGetBoundMedia = undefined;
+        this.onGetSubtitles = undefined;
     }
 }

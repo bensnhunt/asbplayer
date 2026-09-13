@@ -1,20 +1,31 @@
-import React, { useCallback } from 'react';
-import makeStyles from '@material-ui/core/styles/makeStyles';
+import { useCallback, useMemo } from 'react';
+import makeStyles from '@mui/styles/makeStyles';
 import { useTranslation } from 'react-i18next';
-import Box from '@material-ui/core/Box';
-import Button from '@material-ui/core/Button';
-import Dialog from '@material-ui/core/Dialog';
-import DialogActions from '@material-ui/core/DialogActions';
-import DialogContent from '@material-ui/core/DialogContent';
-import DialogTitle from '@material-ui/core/DialogTitle';
-import ChromeExtension from '../services/chrome-extension';
-import SettingsForm from '../../components/SettingsForm';
-import { useLocalFontFamilies } from '../../hooks';
-import { Anki } from '../../anki';
-import { AsbplayerSettings, Profile, supportedLanguages } from '../../settings';
-import SettingsProfileSelectMenu from '../../components/SettingsProfileSelectMenu';
+import Box from '@mui/material/Box';
+import Dialog from '@mui/material/Dialog';
+import DialogContent from '@mui/material/DialogContent';
+import type ChromeExtension from '@project/common/app/services/chrome-extension';
+import SettingsForm from '@project/common/components/SettingsForm';
+import { useLocalFontFamilies } from '@project/common/hooks';
+import type { Anki } from '@project/common/anki';
+import type { AsbplayerSettings, Profile } from '@project/common/settings';
+import { supportedLanguages, testCard } from '@project/common/settings';
+import SettingsProfileSelectMenu from '@project/common/components/SettingsProfileSelectMenu';
+import Toolbar from '@mui/material/Toolbar';
+import Typography from '@mui/material/Typography';
+import IconButton from '@mui/material/IconButton';
+import CloseIcon from '@mui/icons-material/Close';
+import type { Theme } from '@mui/material';
+import type { DictionaryProvider } from '@project/common/dictionary-db';
+import { useAnnotationTutorial } from '@project/common/hooks/use-annotation-tutorial';
+import { AppExtensionGlobalStateProvider } from '@project/common/app/services/app-extension-global-state-provider';
 
-const useStyles = makeStyles((theme) => ({
+const appTestCard = () => {
+    const basePath = window.location.pathname === '/' ? '' : window.location.pathname;
+    return testCard({ imageUrl: `${basePath}/assets/test-card.jpeg`, audioUrl: `${basePath}/assets/test-card.mp3` });
+};
+
+const useStyles = makeStyles<Theme>((theme) => ({
     root: {
         '& .MuiPaper-root': {
             height: '100vh',
@@ -26,6 +37,10 @@ const useStyles = makeStyles((theme) => ({
     profilesContainer: {
         paddingLeft: theme.spacing(4),
         paddingRight: theme.spacing(4),
+        paddingBottom: theme.spacing(2),
+    },
+    title: {
+        flexGrow: 1,
     },
 }));
 
@@ -33,6 +48,7 @@ interface Props {
     anki: Anki;
     extension: ChromeExtension;
     open: boolean;
+    dictionaryProvider: DictionaryProvider;
     settings: AsbplayerSettings;
     scrollToId?: string;
     onSettingsChanged: (settings: Partial<AsbplayerSettings>) => void;
@@ -48,6 +64,7 @@ export default function SettingsDialog({
     anki,
     extension,
     open,
+    dictionaryProvider,
     settings,
     scrollToId,
     onSettingsChanged,
@@ -68,31 +85,66 @@ export default function SettingsDialog({
         updateLocalFontsPermission();
         updateLocalFonts();
     }, [updateLocalFontsPermission, updateLocalFonts]);
+    const globalStateProvider = useMemo(() => new AppExtensionGlobalStateProvider(extension), [extension]);
+    const { inAnnotationTutorial, handleAnnotationTutorialSeen } = useAnnotationTutorial({ globalStateProvider });
 
     return (
         <Dialog open={open} maxWidth="md" fullWidth className={classes.root} onClose={onClose}>
-            <DialogTitle>{t('settings.title')}</DialogTitle>
+            <Toolbar>
+                <Typography variant="h6" className={classes.title}>
+                    {t('settings.title')}
+                </Typography>
+                <IconButton edge="end" onClick={onClose}>
+                    <CloseIcon />
+                </IconButton>
+            </Toolbar>
             <DialogContent className={classes.content}>
                 <SettingsForm
                     anki={anki}
                     extensionInstalled={extension.installed}
+                    extensionVersion={extension.installed ? extension.version : undefined}
                     extensionSupportsAppIntegration={extension.supportsAppIntegration}
                     extensionSupportsOverlay={extension.supportsStreamingVideoOverlay}
                     extensionSupportsSidePanel={extension.supportsSidePanel}
                     extensionSupportsOrderableAnkiFields={extension.supportsOrderableAnkiFields}
                     extensionSupportsTrackSpecificSettings={extension.supportsTrackSpecificSettings}
                     extensionSupportsSubtitlesWidthSetting={extension.supportsSubtitlesWidthSetting}
+                    extensionSupportsPauseOnHover={extension.supportsPauseOnHover}
+                    extensionSupportsPlaybackEngine={extension.supportsPlaybackEngine}
+                    extensionSupportsAutoPauseResume={extension.supportsAutoPauseResume}
+                    extensionSupportsExportCardBind={extension.supportsExportCardBind}
+                    extensionSupportsPageSettings={extension.supportsPageSettings}
+                    extensionSupportsDictionary={extension.supportsDictionary}
+                    extensionSupportsDictionaryBrowser={extension.supportsDictionaryBrowser}
+                    extensionSupportsDictionaryWaniKani={extension.supportsDictionaryWaniKani}
+                    extensionSupportsDictionaryMatchAcrossScripts={extension.supportsDictionaryMatchAcrossScripts}
+                    extensionSupportsSeekableTrackSetting={extension.supportsSeekableTrackSetting}
+                    extensionSupportsAutoCopyableTrackSetting={extension.supportsAutoCopyableTrackSetting}
+                    extensionSupportsDictionaryTokenStatusDisplayAlpha={
+                        extension.supportsDictionaryTokenStatusDisplayAlpha
+                    }
+                    extensionSupportsDictionaryYomitanMecab={extension.supportsDictionaryYomitanMecab}
+                    extensionSupportsSubtitleTrackSelectorInWebApp={extension.supportsSubtitleTrackSelectorInWebApp}
+                    extensionSupportsSubtitleListCustomization={extension.supportsSubtitleListCustomization}
+                    pageConfigs={extension.pageConfig}
                     insideApp
+                    appVersion={import.meta.env.VITE_APP_GIT_COMMIT}
                     chromeKeyBinds={extension.extensionCommands}
                     onOpenChromeExtensionShortcuts={extension.openShortcuts}
                     onSettingsChanged={onSettingsChanged}
+                    dictionaryProvider={dictionaryProvider}
                     settings={settings}
+                    profiles={profilesContext.profiles}
+                    activeProfile={profilesContext.activeProfile}
                     scrollToId={scrollToId}
                     localFontsAvailable={localFontsAvailable}
                     localFontsPermission={localFontsPermission}
                     localFontFamilies={localFontFamilies}
                     supportedLanguages={supportedLanguages}
+                    testCard={appTestCard}
                     onUnlockLocalFonts={handleUnlockLocalFonts}
+                    inAnnotationTutorial={inAnnotationTutorial}
+                    onAnnotationTutorialSeen={handleAnnotationTutorialSeen}
                 />
             </DialogContent>
             {(!extension.installed || extension.supportsSettingsProfiles) && (
@@ -100,9 +152,6 @@ export default function SettingsDialog({
                     <SettingsProfileSelectMenu {...profilesContext} />
                 </Box>
             )}
-            <DialogActions>
-                <Button onClick={onClose}>{t('action.ok')}</Button>
-            </DialogActions>
         </Dialog>
     );
 }

@@ -1,20 +1,17 @@
-import { makeStyles } from '@material-ui/core/styles';
-import { Theme } from '@material-ui/core';
-import Divider from '@material-ui/core/Divider';
-import Drawer from '@material-ui/core/Drawer';
-import ChevronRightIcon from '@material-ui/icons/ChevronRight';
-import IconButton from '@material-ui/core/IconButton';
-import { CopyHistoryItem } from '@project/common';
-import CopyHistoryList from './CopyHistoryList';
-import React from 'react';
+import Drawer from '@project/common/components/Drawer';
+import type { CopyHistoryItem } from '@project/common';
+import { useTranslation } from 'react-i18next';
+import CopyHistoryList from '@project/common/app/components/CopyHistoryList';
 
 interface CopyHistoryProps {
     open: boolean;
     drawerWidth?: number;
     items: CopyHistoryItem[];
+    showBackButton?: boolean;
     forceShowDownloadOptions?: boolean;
     onClose: () => void;
     onDelete: (item: CopyHistoryItem) => void;
+    onDeleteAll: () => void;
     onAnki: (item: CopyHistoryItem) => void;
     onSelect?: (item: CopyHistoryItem) => void;
     onClipAudio: (item: CopyHistoryItem) => void;
@@ -22,45 +19,19 @@ interface CopyHistoryProps {
     onDownloadSectionAsSrt?: (name: string, items: CopyHistoryItem[]) => void;
 }
 
-const useStyles = makeStyles<Theme, CopyHistoryProps, string>((theme) => ({
-    drawer: {
-        width: ({ drawerWidth }) => drawerWidth ?? '100%',
-        flexShrink: 0,
-    },
-    drawerPaper: {
-        width: ({ drawerWidth }) => drawerWidth ?? '100%',
-    },
-    drawerHeader: {
-        display: 'flex',
-        alignItems: 'center',
-        position: 'static',
-        padding: theme.spacing(0, 1),
-        // necessary for content to be below app bar
-        ...theme.mixins.toolbar,
-        justifyContent: 'flex-start',
-    },
-}));
-
 export default function CopyHistory(props: CopyHistoryProps) {
-    const classes = useStyles(props);
+    const { t } = useTranslation();
+    const { showBackButton, ...copyHistoryListProps } = props;
 
     return (
         <Drawer
-            variant="persistent"
-            anchor="right"
+            showBackButton={showBackButton ?? true}
+            label={`${t('bar.miningHistory')} (${props.items.length})`}
             open={props.open}
-            className={classes.drawer}
-            classes={{
-                paper: classes.drawerPaper,
-            }}
+            drawerWidth={props.drawerWidth}
+            onClose={props.onClose}
         >
-            <div className={classes.drawerHeader}>
-                <IconButton onClick={props.onClose}>
-                    <ChevronRightIcon />
-                </IconButton>
-            </div>
-            <Divider />
-            <CopyHistoryList {...props} />
+            <CopyHistoryList {...copyHistoryListProps} />
         </Drawer>
     );
 }

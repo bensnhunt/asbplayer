@@ -1,22 +1,26 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import CssBaseline from '@material-ui/core/CssBaseline';
-import ThemeProvider from '@material-ui/styles/ThemeProvider';
-import {
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import CssBaseline from '@mui/material/CssBaseline';
+import ThemeProvider from '@mui/material/styles/ThemeProvider';
+import type {
     ExtensionToVideoCommand,
     GrantedActiveTabPermissionMessage,
     PopupToExtensionCommand,
     SettingsUpdatedMessage,
 } from '@project/common';
 import { createTheme } from '@project/common/theme';
-import { AsbplayerSettings, SettingsProvider } from '@project/common/settings';
-import Box from '@material-ui/core/Box';
-import Paper from '@material-ui/core/Paper';
-import { ExtensionSettingsStorage } from '../../services/extension-settings-storage';
-import Popup from './Popup';
-import { useRequestingActiveTabPermission } from '../hooks/use-requesting-active-tab-permission';
+import type { AsbplayerSettings } from '@project/common/settings';
+import { SettingsProvider } from '@project/common/settings';
+import Box from '@mui/material/Box';
+import Paper from '@mui/material/Paper';
+import { ExtensionSettingsStorage } from '@project/extension/src/services/extension-settings-storage';
+import Popup from '@project/extension/src/ui/components/Popup';
+import { useRequestingActiveTabPermission } from '@project/extension/src/ui/hooks/use-requesting-active-tab-permission';
 import { isMobile } from 'react-device-detect';
-import Link from '@material-ui/core/Link';
 import { useSettingsProfileContext } from '@project/common/hooks/use-settings-profile-context';
+import { StyledEngineProvider } from '@mui/material/styles';
+import { DictionaryProvider } from '@project/common/dictionary-db';
+import { ExtensionDictionaryStorage } from '@/services/extension-dictionary-storage';
+import { isFirefoxBuild } from '@/services/build-flags';
 
 interface Props {
     commands: any;
@@ -29,16 +33,17 @@ const notifySettingsUpdated = () => {
             command: 'settings-updated',
         },
     };
-    chrome.runtime.sendMessage(settingsUpdatedCommand);
+    void browser.runtime.sendMessage(settingsUpdatedCommand);
 };
 
 export function PopupUi({ commands }: Props) {
+    const dictionaryProvider = useMemo(() => new DictionaryProvider(new ExtensionDictionaryStorage()), []);
     const settingsProvider = useMemo(() => new SettingsProvider(new ExtensionSettingsStorage()), []);
     const [settings, setSettings] = useState<AsbplayerSettings>();
     const theme = useMemo(() => settings && createTheme(settings.themeType), [settings]);
 
     useEffect(() => {
-        settingsProvider.getAll().then(setSettings);
+        void settingsProvider.getAll().then(setSettings);
     }, [settingsProvider]);
 
     const handleSettingsChanged = useCallback(
@@ -51,18 +56,28 @@ export function PopupUi({ commands }: Props) {
     );
 
     const handleOpenExtensionShortcuts = useCallback(() => {
-        chrome.tabs.create({ active: true, url: 'chrome://extensions/shortcuts' });
+        void browser.tabs.create({ active: true, url: 'chrome://extensions/shortcuts' });
     }, []);
 
     const handleOpenApp = useCallback(async () => {
         if (settings?.streamingAppUrl) {
-            chrome.tabs.create({ active: true, url: settings.streamingAppUrl });
+            void browser.tabs.create({ active: true, url: settings.streamingAppUrl });
         }
     }, [settings]);
 
     const handleOpenSidePanel = useCallback(async () => {
-        // @ts-ignore
-        chrome.sidePanel.open({ windowId: (await chrome.windows.getLastFocused()).id });
+        if (isFirefoxBuild) {
+            // @ts-expect-error: browser.sidebarAction is not yet in the TypeScript lib.dom.d.ts
+            browser.sidebarAction.open();
+        } else {
+            browser.windows.getLastFocused((window) => {
+                void browser.sidePanel.open({ windowId: window.id! });
+            });
+        }
+    }, []);
+
+    const handleOpenUserGuide = useCallback(() => {
+        void browser.tabs.create({ active: true, url: 'https://docs.asbplayer.dev/docs/intro' });
     }, []);
 
     const { requestingActiveTabPermission, tabRequestingActiveTabPermission } = useRequestingActiveTabPermission();
@@ -79,52 +94,54 @@ export function PopupUi({ commands }: Props) {
             },
             src: tabRequestingActiveTabPermission.src,
         };
-        chrome.tabs.sendMessage(tabRequestingActiveTabPermission.tabId, command);
+        void browser.tabs.sendMessage(tabRequestingActiveTabPermission.tabId, command);
         window.close();
     }, [requestingActiveTabPermission, tabRequestingActiveTabPermission]);
 
     const handleProfileChanged = useCallback(() => {
-        settingsProvider.getAll().then(setSettings);
+        void settingsProvider.getAll().then(setSettings);
         notifySettingsUpdated();
     }, [settingsProvider]);
 
-    const profilesContext = useSettingsProfileContext({ settingsProvider, onProfileChanged: handleProfileChanged });
+    const profilesContext = useSettingsProfileContext({
+        dictionaryProvider,
+        settingsProvider,
+        onProfileChanged: handleProfileChanged,
+    });
 
     if (!settings || !theme || requestingActiveTabPermission === undefined) {
         return null;
     }
 
-    const version = chrome.runtime.getManifest().version;
-
     return (
-        <ThemeProvider theme={theme}>
-            <CssBaseline />
-            <Paper square elevation={0} style={{ width: isMobile ? '100%' : 600 }}>
-                <Box>
-                    <Popup
-                        commands={commands}
-                        settings={settings}
-                        onSettingsChanged={handleSettingsChanged}
-                        onOpenApp={handleOpenApp}
-                        onOpenSidePanel={handleOpenSidePanel}
-                        onOpenExtensionShortcuts={handleOpenExtensionShortcuts}
-                        {...profilesContext}
-                    />
-                </Box>
-                <Box p={0.5} textAlign="right">
-                    <Link
-                        target="_blank"
-                        rel="noreferrer"
-                        href={`https://github.com/killergerbah/asbplayer/releases/tag/v${version}`}
-                        variant="caption"
-                        align="right"
-                        color="textSecondary"
-                        underline="always"
-                    >
-                        {`v${version}`}
-                    </Link>
-                </Box>
-            </Paper>
-        </ThemeProvider>
+        <StyledEngineProvider injectFirst>
+            <ThemeProvider theme={theme}>
+                <CssBaseline />
+                <Paper
+                    square
+                    style={{
+                        backgroundImage:
+                            settings.themeType === 'dark'
+                                ? 'linear-gradient(rgba(255, 255, 255, 0.165), rgba(255, 255, 255, 0.165))'
+                                : 'none',
+                        width: isMobile ? '100%' : 600,
+                    }}
+                >
+                    <Box>
+                        <Popup
+                            commands={commands}
+                            dictionaryProvider={dictionaryProvider}
+                            settings={settings}
+                            onSettingsChanged={handleSettingsChanged}
+                            onOpenApp={handleOpenApp}
+                            onOpenSidePanel={handleOpenSidePanel}
+                            onOpenExtensionShortcuts={handleOpenExtensionShortcuts}
+                            onOpenUserGuide={handleOpenUserGuide}
+                            {...profilesContext}
+                        />
+                    </Box>
+                </Paper>
+            </ThemeProvider>
+        </StyledEngineProvider>
     );
 }

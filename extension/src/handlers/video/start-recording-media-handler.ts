@@ -1,6 +1,6 @@
-import ImageCapturer from '../../services/image-capturer';
-import {
-    AudioErrorCode,
+import { asbError } from '@project/common/util';
+import type ImageCapturer from '@project/extension/src/services/image-capturer';
+import type {
     AudioModel,
     Command,
     ExtensionToVideoCommand,
@@ -11,10 +11,11 @@ import {
     SubtitleModel,
     VideoToExtensionCommand,
 } from '@project/common';
-import { CardPublisher } from '../../services/card-publisher';
-import AudioRecorderService from '../../services/audio-recorder-service';
-import { DrmProtectedStreamError } from '../../services/audio-recorder-delegate';
-import { SettingsProvider } from '@project/common/settings';
+import { AudioErrorCode, ImageErrorCode, PostMineAction } from '@project/common';
+import type { CardPublisher } from '@project/extension/src/services/card-publisher';
+import type AudioRecorderService from '@project/extension/src/services/audio-recorder-service';
+import { DrmProtectedStreamError } from '@project/extension/src/services/audio-recorder-service';
+import type { SettingsProvider } from '@project/common/settings';
 
 export default class StartRecordingMediaHandler {
     private readonly _audioRecorder: AudioRecorderService;
@@ -42,13 +43,16 @@ export default class StartRecordingMediaHandler {
         return 'start-recording-media';
     }
 
-    async handle(command: Command<Message>, sender: chrome.runtime.MessageSender) {
+    async handle(command: Command<Message>, sender: Browser.runtime.MessageSender) {
         const startRecordingCommand = command as VideoToExtensionCommand<StartRecordingMediaMessage>;
         let drmProtectedStreamError: DrmProtectedStreamError | undefined;
 
+        const tabId = sender.tab?.id;
+        if (tabId === undefined) throw new Error('Cannot start recording media without a valid tab ID');
+
         if (startRecordingCommand.message.record) {
             try {
-                await this._audioRecorder.start({ src: startRecordingCommand.src, tabId: sender.tab?.id! });
+                await this._audioRecorder.start({ src: startRecordingCommand.src, tabId });
             } catch (e) {
                 if (!(e instanceof DrmProtectedStreamError)) {
                     throw e;
@@ -58,26 +62,40 @@ export default class StartRecordingMediaHandler {
             }
         }
 
-        let imageBase64: string | undefined;
+        let imageModel: ImageModel | undefined;
 
         if (startRecordingCommand.message.screenshot) {
             const imageDelay = startRecordingCommand.message.record ? startRecordingCommand.message.imageDelay : 0;
             const { maxWidth, maxHeight, rect, frameId } = startRecordingCommand.message;
-            imageBase64 = await this._imageCapturer.capture(sender.tab!.id!, startRecordingCommand.src, imageDelay, {
-                maxWidth,
-                maxHeight,
-                rect,
-                frameId,
-            });
-            const screenshotTakenCommand: ExtensionToVideoCommand<ScreenshotTakenMessage> = {
-                sender: 'asbplayer-extension-to-video',
-                message: {
-                    command: 'screenshot-taken',
-                },
-                src: startRecordingCommand.src,
-            };
+            try {
+                const imageBase64 = await this._imageCapturer.capture(tabId, startRecordingCommand.src, imageDelay, {
+                    maxWidth,
+                    maxHeight,
+                    rect,
+                    frameId,
+                });
+                imageModel = {
+                    base64: imageBase64,
+                    extension: 'jpeg',
+                };
+            } catch (e) {
+                asbError('recording/screenshot', e);
+                imageModel = {
+                    base64: '',
+                    extension: 'jpeg',
+                    error: ImageErrorCode.captureFailed,
+                };
+            } finally {
+                const screenshotTakenCommand: ExtensionToVideoCommand<ScreenshotTakenMessage> = {
+                    sender: 'asbplayer-extension-to-video',
+                    message: {
+                        command: 'screenshot-taken',
+                    },
+                    src: startRecordingCommand.src,
+                };
 
-            chrome.tabs.sendMessage(sender.tab!.id!, screenshotTakenCommand);
+                void browser.tabs.sendMessage(tabId, screenshotTakenCommand);
+            }
         }
 
         if (!startRecordingCommand.message.record || drmProtectedStreamError !== undefined) {
@@ -92,22 +110,18 @@ export default class StartRecordingMediaHandler {
                 track: 0,
             };
 
-            let imageModel: ImageModel | undefined = undefined;
+            let encodeAsMp3 = false;
 
-            if (imageBase64) {
-                imageModel = {
-                    base64: imageBase64,
-                    extension: 'jpeg',
-                };
+            if (startRecordingCommand.message.postMineAction !== PostMineAction.showAnkiDialog) {
+                encodeAsMp3 = await this._settings.getSingle('preferMp3');
             }
 
-            const preferMp3 = await this._settings.getSingle('preferMp3');
             const audioModel: AudioModel | undefined =
                 drmProtectedStreamError === undefined
                     ? undefined
                     : {
                           base64: '',
-                          extension: preferMp3 ? 'mp3' : 'webm',
+                          extension: encodeAsMp3 ? 'mp3' : 'webm',
                           paddingStart: 0,
                           paddingEnd: 0,
                           start: mediaTimestamp,
@@ -116,7 +130,7 @@ export default class StartRecordingMediaHandler {
                           error: AudioErrorCode.drmProtected,
                       };
 
-            this._cardPublisher.publish(
+            void this._cardPublisher.publish(
                 {
                     subtitle: subtitle,
                     surroundingSubtitles: [],
@@ -127,7 +141,7 @@ export default class StartRecordingMediaHandler {
                     mediaTimestamp: startRecordingCommand.message.mediaTimestamp,
                 },
                 startRecordingCommand.message.postMineAction,
-                sender.tab!.id!,
+                tabId,
                 startRecordingCommand.src
             );
         }

@@ -1,7 +1,6 @@
-import React from 'react';
-import MenuItem from '@material-ui/core/MenuItem';
-import TextField from '@material-ui/core/TextField';
+import MenuItem from '@mui/material/MenuItem';
 import { useTranslation } from 'react-i18next';
+import SettingsTextField from '@project/common/components/SettingsTextField';
 
 const maxTracks = 3;
 
@@ -17,17 +16,17 @@ export default function SubtitleAppearanceTrackSelector({ track, onTrackSelected
 
     return (
         <>
-            <TextField
+            <SettingsTextField
                 select
                 fullWidth
-                color="secondary"
+                color="primary"
                 variant="outlined"
                 size="small"
-                label={t('settings.subtitleTrack')!}
+                label={t('settings.subtitleTrack')}
                 helperText={track === 'all' ? t('settings.subtitleTrackSelectorHelper') : undefined}
                 value={track}
                 onChange={(e) =>
-                    e.target.value === 'all' ? onTrackSelected('all') : onTrackSelected(Number(e.target.value) as Track)
+                    e.target.value === 'all' ? onTrackSelected('all') : onTrackSelected(Number(e.target.value))
                 }
             >
                 <MenuItem value={'all'}>{t('settings.allSubtitleTracks')}</MenuItem>
@@ -38,7 +37,7 @@ export default function SubtitleAppearanceTrackSelector({ track, onTrackSelected
                         </MenuItem>
                     );
                 })}
-            </TextField>
+            </SettingsTextField>
         </>
     );
 }

@@ -1,7 +1,7 @@
 import React from 'react';
-import Box from '@material-ui/core/Box';
-import Button from '@material-ui/core/Button';
-import NoteAddIcon from '@material-ui/icons/NoteAdd';
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import NoteAddIcon from '@mui/icons-material/NoteAdd';
 import { PostMineAction } from '@project/common';
 import { useTranslation } from 'react-i18next';
 
@@ -40,6 +40,8 @@ const SidePanelBottomControls = ({
                 return t('action.mine');
             case PostMineAction.updateLastCard:
                 return t('action.updateLastCard');
+            case PostMineAction.showUpdateCardDialog:
+                return t('postMineAction.showUpdateCardDialog');
         }
     }
 
@@ -53,7 +55,7 @@ const SidePanelBottomControls = ({
             <Button
                 disabled={disabled || (recordingAudio && !emptySubtitleTrack)}
                 variant="contained"
-                color="secondary"
+                color="primary"
                 startIcon={<NoteAddIcon />}
                 onClick={onMineSubtitle}
                 style={{ width: '100%' }}

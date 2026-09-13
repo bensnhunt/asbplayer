@@ -2,38 +2,37 @@
     "name": "@project/client",
     "version": "0.1.0",
     "private": true,
+    "type": "module",
     "dependencies": {
-        "@craco/craco": "^6.4.3",
-        "@fontsource/roboto": "^5.0.13",
-        "@material-ui/core": "^4.11.3",
-        "@material-ui/icons": "^4.11.2",
-        "@material-ui/lab": "^4.0.0-alpha.57",
-        "@project/common": "0.1.0",
-        "@testing-library/jest-dom": "^5.11.6",
-        "@testing-library/react": "^11.1.2",
-        "@testing-library/user-event": "^12.2.2",
-        "@types/jest": "^27.4.0",
-        "@types/node": "^17.0.10",
-        "@types/react": "^18.0.0",
-        "gh-pages": "^3.1.0",
-        "jest-watch-typeahead": "0.6.5",
-        "react": "^18.0.0",
-        "react-device-detect": "1.17.0",
-        "react-dom": "^18.0.0",
-        "react-i18next": "^12.2.0",
-        "react-scripts": "5.0.0",
-        "typescript": "^4.6.3",
-        "web-vitals": "^0.2.4"
+        "@emotion/react": "^11.14.0",
+        "@emotion/styled": "^11.14.1",
+        "@fontsource/roboto": "^5.2.6",
+        "@mui/icons-material": "^6.4.8",
+        "@mui/material": "^6.4.8",
+        "@mui/styles": "^6.4.8",
+        "@project/common": "workspace:^",
+        "@types/node": "^22.13.14",
+        "@types/react": "^19.1.8",
+        "@vitejs/plugin-react": "^6.0.1",
+        "gh-pages": "^6.3.0",
+        "i18next": "^25.3.2",
+        "react": "^19.1.0",
+        "react-device-detect": "^2.2.3",
+        "react-dom": "^19.1.0",
+        "react-i18next": "^15.6.1",
+        "typescript": "^5.8.3",
+        "vite": "^8.0.0"
     },
-    "homepage": "https://killergerbah.github.io/asbplayer",
+    "homepage": "https://app.asbplayer.dev",
     "scripts": {
-        "predeploy": "npm run build",
-        "deploy": "gh-pages -d build",
-        "start": "NODE_OPTIONS=--openssl-legacy-provider craco start",
-        "build": "../scripts/loc/loc-keys-match && NODE_OPTIONS=--openssl-legacy-provider craco build",
-        "test": "craco test",
-        "eject": "react-scripts eject",
-        "test:nowatch": "react-scripts test --watchAll=false"
+        "start": "VITE_APP_GIT_COMMIT=$(git rev-parse --short HEAD) vite",
+        "verify": "../scripts/loc/loc-keys-match && tsc && jest",
+        "build": "yarn run verify && VITE_APP_GIT_COMMIT=$(git rev-parse --short HEAD) vite build",
+        "buildFast": "VITE_APP_GIT_COMMIT=$(git rev-parse --short HEAD) vite build",
+        "buildStaging": "yarn run verify && VITE_APP_GIT_COMMIT=$(git rev-parse --short HEAD) VITE_APP_BASE_PATH=\"/asbplayer-staging\" vite build",
+        "preview": "vite preview",
+        "deploy": "gh-pages -d dist",
+        "test": "jest"
     },
     "eslintConfig": {
         "extends": [
@@ -54,6 +53,13 @@
         ]
     },
     "devDependencies": {
-        "fake-indexeddb": "^4.0.1"
+        "@types/jest": "^30.0.0",
+        "fake-indexeddb": "^6.0.1",
+        "jest": "^30.0.5",
+        "ts-jest": "^29.4.0",
+        "vite-plugin-html": "^3.2.2",
+        "vite-plugin-pwa": "^1.2.0",
+        "vite-plugin-static-copy": "^3.3.0",
+        "yarn-upgrade-all": "^0.7.5"
     }
 }

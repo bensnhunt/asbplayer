@@ -1,21 +1,29 @@
 import React from 'react';
-import { Trans } from 'react-i18next';
-import { makeStyles } from '@material-ui/styles';
+import { Trans, useTranslation } from 'react-i18next';
+import { makeStyles } from '@mui/styles';
 import gt from 'semver/functions/gt';
-import Fade from '@material-ui/core/Fade';
-import Paper from '@material-ui/core/Paper';
-import Link from '@material-ui/core/Link';
-import Typography from '@material-ui/core/Typography';
-import ChromeExtension from '../services/chrome-extension';
-import { Theme } from '@material-ui/core/styles';
-import { useAppBarHeight } from '../hooks/use-app-bar-height';
+import Box from '@mui/material/Box';
+import Fade from '@mui/material/Fade';
+import Paper from '@mui/material/Paper';
+import Link from '@mui/material/Link';
+import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
+import type ChromeExtension from '@project/common/app/services/chrome-extension';
+import { useTheme } from '@mui/material/styles';
+import type { Theme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { useAppBarHeight } from '@project/common/hooks/use-app-bar-height';
+import type { VideoTabModel } from '@project/common';
+import VideoElementSelector from '@project/common/app/components/VideoElementSelector';
+import LoadSubtitlesIcon from '@project/common/components/LoadSubtitlesIcon';
+import RestoreIcon from '@mui/icons-material/Restore';
 
 interface StylesProps {
     appBarHidden: boolean;
     appBarHeight: number;
 }
 
-const useStyles = makeStyles<Theme, StylesProps>((theme) => ({
+const useStyles = makeStyles<Theme, StylesProps>({
     background: ({ appBarHidden, appBarHeight }) => ({
         position: 'absolute',
         height: appBarHidden ? '100vh' : `calc(100vh - ${appBarHeight}px)`,
@@ -31,7 +39,7 @@ const useStyles = makeStyles<Theme, StylesProps>((theme) => ({
     browseLink: {
         cursor: 'pointer',
     },
-}));
+});
 
 interface Props {
     extension: ChromeExtension;
@@ -40,9 +48,14 @@ interface Props {
     loading: boolean;
     dragging: boolean;
     appBarHidden: boolean;
+    videoElements: VideoTabModel[];
+    canRestoreLastSession: boolean;
     onFileSelector: React.MouseEventHandler<HTMLAnchorElement> &
         React.MouseEventHandler<HTMLSpanElement> &
         React.MouseEventHandler<HTMLLabelElement>;
+    onVideoElementSelected: (videoElement: VideoTabModel) => void;
+    onRestoreLastSession: () => void;
+    onOpenSubtitleTrackSelector: () => void;
 }
 
 export default function LandingPage({
@@ -52,49 +65,118 @@ export default function LandingPage({
     loading,
     dragging,
     appBarHidden,
+    videoElements,
+    canRestoreLastSession,
     onFileSelector,
+    onVideoElementSelected,
+    onRestoreLastSession,
+    onOpenSubtitleTrackSelector,
 }: Props) {
+    const { t } = useTranslation();
     const appBarHeight = useAppBarHeight();
     const classes = useStyles({ appBarHidden, appBarHeight });
     const extensionUpdateAvailable = extension.version && gt(latestExtensionVersion, extension.version);
+    const theme = useTheme();
+    const smallScreen = useMediaQuery(theme.breakpoints.down(500));
+    const showVideoElementSelector =
+        extension.supportsLandingPageStreamingVideoElementSelector && videoElements.length > 0;
+    let buttonCount = 1;
+    if (canRestoreLastSession) {
+        buttonCount++;
+    }
+    if (showVideoElementSelector) {
+        buttonCount++;
+    }
 
     return (
-        <Paper square variant="elevation" elevation={0} className={classes.background}>
+        <Paper square className={classes.background}>
             <Fade in={!loading && !dragging} timeout={500}>
-                <Typography variant="h6">
-                    <Trans i18nKey={'landing.cta'}>
-                        Drag and drop subtitle and media files, or
-                        <Link
-                            target="#"
-                            className={classes.browseLink}
-                            onClick={onFileSelector}
-                            color="secondary"
-                            component="label"
-                        >
-                            browse
-                        </Link>
-                        .
-                    </Trans>
-                    <br />
-                    {!extension.installed && (
-                        <Trans i18nKey="landing.extensionNotInstalled">
-                            Install the
-                            <Link color="secondary" target="_blank" rel="noreferrer" href={extensionUrl}>
-                                Chrome extension
+                <div style={{ minWidth: smallScreen ? window.innerWidth : 'auto' }}>
+                    <Typography variant="h6">
+                        <Trans i18nKey={'landing.cta'}>
+                            Drag and drop subtitle and media files, or
+                            <Link
+                                className={classes.browseLink}
+                                onClick={onFileSelector}
+                                color="primary"
+                                component="label"
+                            >
+                                browse
                             </Link>
-                            to sync subtitles with streaming video.
+                            .
                         </Trans>
-                    )}
-                    {extensionUpdateAvailable && (
-                        <Trans i18nKey="landing.extensionUpdateAvailable">
-                            An extension
-                            <Link color="secondary" target="_blank" rel="noreferrer" href={extensionUrl}>
-                                update
-                            </Link>{' '}
-                            is available.
-                        </Trans>
-                    )}
-                </Typography>
+                        <br />
+                        {!extension.installed && (
+                            <Trans i18nKey="landing.extensionNotInstalled">
+                                Install the
+                                <Link color="primary" target="_blank" rel="noreferrer" href={extensionUrl}>
+                                    Chrome extension
+                                </Link>
+                                to sync subtitles with streaming video.
+                            </Trans>
+                        )}
+                        {extensionUpdateAvailable && (
+                            <Trans i18nKey="landing.extensionUpdateAvailable">
+                                An extension
+                                <Link color="primary" target="_blank" rel="noreferrer" href={extensionUrl}>
+                                    update
+                                </Link>{' '}
+                                is available.
+                            </Trans>
+                        )}
+                    </Typography>
+                    {
+                        <Box
+                            sx={{
+                                position: 'absolute',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                bottom: 0,
+                                left: 0,
+                                padding: 1.5,
+                                width: '100%',
+                                gap: 1.5,
+                            }}
+                        >
+                            <Box
+                                sx={{
+                                    display: 'grid',
+                                    gridTemplateColumns: { xs: '1fr', md: `repeat(${buttonCount}, 1fr)` },
+                                    gap: 1.5,
+                                }}
+                            >
+                                <Button
+                                    variant="outlined"
+                                    color="primary"
+                                    startIcon={<LoadSubtitlesIcon fontSize="small" />}
+                                    onClick={onOpenSubtitleTrackSelector}
+                                    fullWidth
+                                >
+                                    {t('action.loadSubtitles')}
+                                </Button>
+                                {canRestoreLastSession && (
+                                    <Button
+                                        variant="outlined"
+                                        color="primary"
+                                        startIcon={<RestoreIcon />}
+                                        onClick={onRestoreLastSession}
+                                        fullWidth
+                                    >
+                                        {t('landing.restoreLastSession')}
+                                    </Button>
+                                )}
+                                {showVideoElementSelector &&
+                                    extension.supportsLandingPageStreamingVideoElementSelector &&
+                                    videoElements.length > 0 && (
+                                        <VideoElementSelector
+                                            videoElements={videoElements}
+                                            onVideoElementSelected={onVideoElementSelected}
+                                        />
+                                    )}
+                            </Box>
+                        </Box>
+                    }
+                </div>
             </Fade>
         </Paper>
     );

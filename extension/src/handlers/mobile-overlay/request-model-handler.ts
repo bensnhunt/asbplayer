@@ -1,4 +1,4 @@
-import { Command, Message } from '@project/common';
+import type { Command, Message } from '@project/common';
 
 export default class RequestModelHandler {
     get sender() {
@@ -9,12 +9,25 @@ export default class RequestModelHandler {
         return 'request-mobile-overlay-model';
     }
 
-    handle(command: Command<Message>, sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) {
+    handle(command: Command<Message>, sender: Browser.runtime.MessageSender, sendResponse: (response?: any) => void) {
         if (sender.tab?.id === undefined) {
             return;
         }
 
-        chrome.tabs.sendMessage(sender.tab.id, command).then((model) => sendResponse(model));
+        const tabId = sender.tab.id;
+        browser.tabs
+            .get(tabId)
+            .then((tab) => {
+                if (tab.url?.startsWith(browser.runtime.getURL(''))) {
+                    // runtime.sendMessage already goes directly to extension page content scripts
+                    return;
+                }
+
+                void browser.tabs.sendMessage(tabId, command).then((model) => sendResponse(model));
+            })
+            .catch(() => {
+                // Tab may have been closed
+            });
         return true;
     }
 }

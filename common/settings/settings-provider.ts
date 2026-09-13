@@ -1,18 +1,40 @@
-import {
+import type {
     AnkiField,
     AnkiFieldSettings,
     AnkiSettings,
     AsbplayerSettings,
-    CustomAnkiFieldSettings,
     KeyBindName,
-    SubtitleListPreference,
     SubtitleSettings,
     TextSubtitleSettings,
+} from '@project/common/settings/settings';
+import type { DictionaryTrack } from '@project/common/settings/settings-dictionary';
+import {
+    AutoPauseResumeMode,
+    SubtitleListPreference,
+    SubtitleListTimestampDisplay,
+    SubtitleVisibility,
     textSubtitleSettingsKeys,
-} from '.';
-import { AutoPausePreference, PostMineAction, PostMinePlayback } from '..';
+    VideoSubtitleSplitBehavior,
+} from '@project/common/settings/settings';
+import {
+    TokenFrequencyAnnotation,
+    TokenMatchStrategy,
+    TokenMatchStrategyPriority,
+    TokenReadingAnnotation,
+    TokenState,
+    TokenStatus,
+    TokenStyling,
+    getFullyKnownTokenStatus,
+} from '@project/common/settings/settings-dictionary';
+import {
+    AutoPausePreference,
+    PlayMode,
+    PostMineAction,
+    PostMinePlayback,
+    SubtitleHtml,
+} from '@project/common/src/model';
 
-// @ts-ignore
+// @ts-expect-error: navigator.userAgentData is not yet in the TypeScript lib.dom.d.ts
 const isMacOs = (navigator.userAgentData?.platform ?? navigator.platform)?.toUpperCase()?.indexOf('MAC') > -1;
 
 const defaultSubtitleTextSettings = {
@@ -31,8 +53,73 @@ const defaultSubtitleTextSettings = {
     subtitleBlur: false,
 };
 
+function makeDefaultDictionaryTokenAnnotationConfigs() {
+    return {
+        colorizeEnabled: false,
+        video: {
+            color: { onHoverEnabled: false, size: 1 },
+            reading: { onHoverEnabled: false, size: 0.5 },
+            frequency: { onHoverEnabled: false, size: 0.3 },
+            pitchAccent: { onHoverEnabled: true, size: 0.1 },
+        },
+        subtitlePlayer: {
+            color: { onHoverEnabled: false, size: 1 },
+            reading: { onHoverEnabled: false, size: 0.5 },
+            frequency: { onHoverEnabled: false, size: 0.5 },
+            pitchAccent: { onHoverEnabled: true, size: 0.1 },
+        },
+        onStatuses: [
+            { reading: false, frequency: false, pitchAccent: false },
+            { reading: false, frequency: false, pitchAccent: false },
+            { reading: false, frequency: false, pitchAccent: false },
+            { reading: false, frequency: false, pitchAccent: false },
+            { reading: false, frequency: false, pitchAccent: false },
+            { reading: false, frequency: false, pitchAccent: false },
+        ],
+        onStates: [{ reading: false, frequency: false, pitchAccent: false }],
+    };
+}
+
+const defaultDictionaryTrackSettings: DictionaryTrack = {
+    dictionaryColorizeSubtitles: false,
+    dictionaryAutoGenerateStatistics: false,
+    dictionaryColorizeOnHoverOnly: false,
+    dictionaryHighlightOnHover: true,
+    dictionaryTokenMatchStrategy: TokenMatchStrategy.ANY_FORM_COLLECTED,
+    dictionaryMatchAcrossScripts: true,
+    dictionaryTokenMatchStrategyPriority: TokenMatchStrategyPriority.EXACT,
+    dictionaryYomitanUrl: 'http://127.0.0.1:19633',
+    dictionaryYomitanParser: 'scanning-parser',
+    dictionaryYomitanScanLength: 16,
+    dictionaryTokenReadingAnnotation: TokenReadingAnnotation.NEVER,
+    dictionaryDisplayIgnoredTokenReadings: false,
+    dictionaryTokenFrequencyAnnotation: TokenFrequencyAnnotation.NEVER,
+    dictionaryAnkiDecks: [],
+    dictionaryAnkiWordFields: [],
+    dictionaryAnkiSentenceFields: [],
+    dictionaryAnkiSentenceTokenMatchStrategy: TokenMatchStrategy.EXACT_FORM_COLLECTED,
+    dictionaryAnkiMatureCutoff: 21,
+    dictionaryAnkiTreatSuspended: 'NORMAL',
+    dictionaryWaniKaniApiToken: '',
+    dictionaryTokenStyling: TokenStyling.UNDERLINE,
+    dictionaryTokenStylingThickness: 3,
+    dictionaryColorizeFullyKnownTokens: false,
+    dictionaryTokenStatusColors: ['#FF0000', '#FFA500', '#FFFF00', '#00FF00', '#0000FF', '#FFFFFF'],
+    dictionaryTokenStatusConfig: [
+        { display: true, color: '#FF0000', alpha: 'FF' },
+        { display: true, color: '#FFA500', alpha: 'FF' },
+        { display: true, color: '#FFFF00', alpha: 'FF' },
+        { display: true, color: '#00FF00', alpha: 'FF' },
+        { display: true, color: '#0000FF', alpha: 'FF' },
+        { display: false, color: '#FFFFFF', alpha: 'FF' },
+    ],
+    dictionaryTokenAnnotationConfig: makeDefaultDictionaryTokenAnnotationConfigs(),
+};
+
 export const defaultSettings: AsbplayerSettings = {
     ankiConnectUrl: 'http://127.0.0.1:8765',
+    ankiConnectApiKey: '',
+    ankiRefreshBrowserAfterUpdate: false,
     deck: '',
     noteType: '',
     sentenceField: '',
@@ -60,18 +147,48 @@ export const defaultSettings: AsbplayerSettings = {
     customAnkiFieldSettings: {},
     ...defaultSubtitleTextSettings,
     subtitlePositionOffset: 75,
+    topSubtitlePositionOffset: 75,
     subtitleAlignment: 'bottom',
+    subtitleAboveThumbnail: true,
+    thumbnailPreview: false,
     subtitleTracksV2: [],
-    subtitlesWidth: 100,
+    subtitlesWidth: -1,
     audioPaddingStart: 0,
     audioPaddingEnd: 500,
     maxImageWidth: 0,
     maxImageHeight: 0,
+    mediaFragmentFormat: 'jpeg',
+    mediaFragmentTrimStart: 200,
+    mediaFragmentTrimEnd: 200,
+    mediaFragmentMaxClipLength: 10000,
     surroundingSubtitlesCountRadius: 2,
     surroundingSubtitlesTimeRadius: 10000,
     autoPausePreference: AutoPausePreference.atEnd,
+    autoPauseResumeMode: AutoPauseResumeMode.manual,
+    autoPauseResumeDelayMs: 300,
+    autoPauseFixedDurationMs: 2000,
+    autoPauseMinimumDurationMs: 1000,
+    autoPauseMaximumDurationMs: 4000,
+    autoPauseTimePerCharacterMs: 60,
+    subtitleVisibility: SubtitleVisibility.whenDue,
+    subtitleTriggerStartOffset: 0,
+    subtitleTriggerEndOffset: 0,
+    subtitleTriggerGapEndOffset: 0,
+    subtitleTriggerGapStartOffset: 0,
+    seekableTracks: 1, // Bitset with first bit flipped i.e. first track
+    autoCopyableTracks: 1, // Also bitset
+    subtitleHtml: SubtitleHtml.remove,
+    seekDuration: 3,
     speedChangeStep: 0.1,
+    playbackRate: 1,
+    playbackRateNotificationEnabled: true,
+    rememberPlaybackRate: false,
     fastForwardModePlaybackRate: 2.7,
+    fastForwardPlaybackMinimumSkipIntervalMs: 500,
+    repeatCountPreference: 0,
+    rememberPlaybackModes: false,
+    lastPlaybackModes: [PlayMode.normal],
+    lastPlaybackPositions: [],
     keyBindSet: {
         togglePlay: { keys: 'space' },
         toggleAutoPause: { keys: isMacOs ? '⇧+P' : 'shift+P' },
@@ -84,9 +201,9 @@ export const defaultSettings: AsbplayerSettings = {
         toggleAsbplayerSubtitleTrack1: { keys: 'W+1' },
         toggleAsbplayerSubtitleTrack2: { keys: 'W+2' },
         toggleAsbplayerSubtitleTrack3: { keys: 'W+3' },
-        toggleAsbplayerBlurTrack1: { keys: 'B+1' },
-        toggleAsbplayerBlurTrack2: { keys: 'B+2' },
-        toggleAsbplayerBlurTrack3: { keys: 'B+3' },
+        unblurAsbplayerTrack1: { keys: 'B+1' },
+        unblurAsbplayerTrack2: { keys: 'B+2' },
+        unblurAsbplayerTrack3: { keys: 'B+3' },
         seekBackward: { keys: 'A' },
         seekForward: { keys: 'D' },
         seekToPreviousSubtitle: { keys: 'left' },
@@ -100,19 +217,39 @@ export const defaultSettings: AsbplayerSettings = {
         copySubtitle: { keys: isMacOs ? '⇧+⌃+Z' : 'ctrl+shift+Z' },
         ankiExport: { keys: isMacOs ? '⇧+⌃+X' : 'ctrl+shift+X' },
         updateLastCard: { keys: isMacOs ? '⇧+⌃+U' : 'ctrl+shift+U' },
+        exportCard: { keys: '' },
         takeScreenshot: { keys: isMacOs ? '⇧+⌃+V' : 'ctrl+shift+V' },
+        toggleRecording: { keys: isMacOs ? '⇧+⌃+R' : 'ctrl+shift+R' },
+        selectSubtitleTrack: { keys: isMacOs ? '⇧+⌃+F' : 'ctrl+shift+F' },
         decreasePlaybackRate: { keys: isMacOs ? '⇧+⌃+[' : 'ctrl+shift+[' },
         increasePlaybackRate: { keys: isMacOs ? '⇧+⌃+]' : 'ctrl+shift+]' },
         toggleSidePanel: { keys: '`' },
         toggleRepeat: { keys: isMacOs ? '⇧+R' : 'shift+R' },
+        toggleSubtitleVisibility: { keys: '' },
+        cycleAutoPauseResumeMode: { keys: '' },
+        moveBottomSubtitlesUp: { keys: '' },
+        moveBottomSubtitlesDown: { keys: '' },
+        moveTopSubtitlesUp: { keys: '' },
+        moveTopSubtitlesDown: { keys: '' },
+        markHoveredToken5: { keys: 'Q+5' },
+        markHoveredToken4: { keys: 'Q+4' },
+        markHoveredToken3: { keys: 'Q+3' },
+        markHoveredToken2: { keys: 'Q+2' },
+        markHoveredToken1: { keys: 'Q+1' },
+        markHoveredToken0: { keys: 'Q+0' },
+        toggleHoveredTokenIgnored: { keys: 'Q+I' },
+        openStatistics: { keys: 'Q+S' },
     },
+    recordWithAudioPlayback: true,
     preferMp3: true,
     tabName: 'asbplayer',
     miningHistoryStorageLimit: 25,
-    preCacheSubtitleDom: true,
     clickToMineDefaultAction: PostMineAction.showAnkiDialog,
     postMiningPlaybackState: PostMinePlayback.remember,
     themeType: 'dark',
+    videoSubtitleSplitBehavior: VideoSubtitleSplitBehavior.rememberSplitPosition,
+    showSubtitleListMiningButton: true,
+    subtitleListTimestampDisplay: SubtitleListTimestampDisplay.startAndEnd,
     copyToClipboardOnMine: false,
     rememberSubtitleOffset: true,
     lastSubtitleOffset: 0,
@@ -120,11 +257,12 @@ export const defaultSettings: AsbplayerSettings = {
     alwaysPlayOnSubtitleRepeat: true,
     subtitleRegexFilter: '',
     subtitleRegexFilterTextReplacement: '',
+    convertNetflixRuby: false,
     language: 'en',
     customAnkiFields: {},
     tags: [],
     imageBasedSubtitleScaleFactor: 1,
-    streamingAppUrl: 'https://killergerbah.github.io/asbplayer',
+    streamingAppUrl: 'https://app.asbplayer.dev',
     streamingDisplaySubtitles: true,
     streamingRecordMedia: true,
     streamingTakeScreenshot: true,
@@ -132,14 +270,52 @@ export const defaultSettings: AsbplayerSettings = {
     streamingCropScreenshot: true,
     streamingSubsDragAndDrop: true,
     streamingAutoSync: false,
+    streamingAutoSyncPromptOnFailure: false,
     streamingLastLanguagesSynced: {},
     streamingCondensedPlaybackMinimumSkipIntervalMs: 1000,
     streamingScreenshotDelay: 1000,
     streamingSubtitleListPreference: SubtitleListPreference.noSubtitleList,
     streamingEnableOverlay: true,
+    whisperServerUrl: 'http://127.0.0.1:8767',
+    whisperServerAuthToken: '',
+    streamingPages: {
+        netflix: {},
+        youtube: {},
+        tver: {},
+        bandaiChannel: {},
+        amazonPrime: {},
+        hulu: {},
+        huluJp: {},
+        disneyPlus: {},
+        appsDisneyPlus: {},
+        unext: {},
+        viki: {},
+        embyJellyfin: {},
+        twitch: {},
+        osnPlus: {},
+        bilibili: {},
+        nrktv: {},
+        plex: {},
+        yleAreena: {},
+        hboMax: {},
+        stremio: {},
+        cijapanese: {},
+        iwanttfc: {},
+        svtplay: {},
+        urplay: {},
+        archive: {},
+        crunchyroll: {},
+    },
     webSocketClientEnabled: false,
     webSocketServerUrl: 'ws://127.0.0.1:8766/ws',
+    pauseOnHoverMode: 0,
+    lastSelectedAnkiExportMode: 'default',
+    dictionaryTracks: [defaultDictionaryTrackSettings, defaultDictionaryTrackSettings, defaultDictionaryTrackSettings],
 };
+
+export const NUM_DICTIONARY_TRACKS = defaultSettings.dictionaryTracks.length;
+export const NUM_TOKEN_STATUSES = defaultDictionaryTrackSettings.dictionaryTokenAnnotationConfig.onStatuses.length;
+export const NUM_TOKEN_STATES = defaultDictionaryTrackSettings.dictionaryTokenAnnotationConfig.onStates.length;
 
 export interface AnkiFieldUiModel {
     key: string;
@@ -220,7 +396,7 @@ export const textSubtitleSettingsForTrack = (
             return true;
         };
 
-        let mergedSettings: any = {};
+        const mergedSettings: any = {};
 
         for (const key of textSubtitleSettingsKeys) {
             if (valuesAllSame(key)) {
@@ -234,12 +410,10 @@ export const textSubtitleSettingsForTrack = (
     }
 
     if (track === 0 || track > subtitleSettings.subtitleTracksV2.length) {
-        return Object.fromEntries(
-            textSubtitleSettingsKeys.map((k) => [k, subtitleSettings[k]])
-        ) as unknown as TextSubtitleSettings;
+        return Object.fromEntries(textSubtitleSettingsKeys.map((k) => [k, subtitleSettings[k]]));
     }
 
-    return subtitleSettings.subtitleTracksV2[track - 1] as TextSubtitleSettings;
+    return subtitleSettings.subtitleTracksV2[track - 1];
 };
 
 export const changeForTextSubtitleSetting = (
@@ -357,6 +531,175 @@ const deepEquals = (a: any, b: any) => {
     return true;
 };
 
+const ensureDictionaryTracksConsistency = ({ dictionaryTracks }: Partial<AsbplayerSettings>) => {
+    if (!dictionaryTracks) return;
+    const defaultTrack = defaultSettings.dictionaryTracks[0];
+    const fullyKnownStatus = getFullyKnownTokenStatus();
+    for (const dt of dictionaryTracks) {
+        // Ensure dictionaryTokenStatusColors exists and has the correct length
+        if (!dt.dictionaryTokenStatusColors) (dt as any).dictionaryTokenStatusColors = [];
+        while (dt.dictionaryTokenStatusColors.length < NUM_TOKEN_STATUSES) {
+            const color = defaultTrack.dictionaryTokenStatusColors[dt.dictionaryTokenStatusColors.length];
+            dt.dictionaryTokenStatusColors.push(color);
+        }
+        while (dt.dictionaryTokenStatusColors.length > NUM_TOKEN_STATUSES) {
+            dt.dictionaryTokenStatusColors.pop();
+        }
+
+        // Ensure dictionaryTokenStatusConfig exists and has the correct length
+        if (!dt.dictionaryTokenStatusConfig) (dt as any).dictionaryTokenStatusConfig = [];
+        while (dt.dictionaryTokenStatusConfig.length < NUM_TOKEN_STATUSES) {
+            const config = {
+                ...defaultTrack.dictionaryTokenStatusConfig[dt.dictionaryTokenStatusConfig.length],
+                color: dt.dictionaryTokenStatusColors[dt.dictionaryTokenStatusConfig.length],
+            };
+            dt.dictionaryTokenStatusConfig.push(config);
+        }
+        while (dt.dictionaryTokenStatusConfig.length > NUM_TOKEN_STATUSES) {
+            dt.dictionaryTokenStatusConfig.pop();
+        }
+
+        // Migrate dictionaryTokenStatusColors to dictionaryTokenStatusConfig, both are updated on settings change
+        for (let i = 0; i < NUM_TOKEN_STATUSES; ++i) {
+            if (dt.dictionaryTokenStatusConfig[i].color !== dt.dictionaryTokenStatusColors[i]) {
+                dt.dictionaryTokenStatusConfig[i] = {
+                    ...dt.dictionaryTokenStatusConfig[i],
+                    color: dt.dictionaryTokenStatusColors[i],
+                };
+            }
+        }
+        if (dt.dictionaryTokenStatusConfig[fullyKnownStatus].display !== dt.dictionaryColorizeFullyKnownTokens) {
+            dt.dictionaryTokenStatusConfig[fullyKnownStatus] = {
+                ...dt.dictionaryTokenStatusConfig[fullyKnownStatus],
+                display: dt.dictionaryColorizeFullyKnownTokens,
+            };
+        }
+
+        // Ensure dictionaryTokenAnnotationConfig exists
+        if (!dt.dictionaryTokenAnnotationConfig) {
+            const config = makeDefaultDictionaryTokenAnnotationConfigs();
+
+            // Migrate dictionaryColorizeOnHoverOnly to dictionaryTokenAnnotationConfig
+            config.video.color.onHoverEnabled = dt.dictionaryColorizeOnHoverOnly;
+            config.video.reading.onHoverEnabled = dt.dictionaryColorizeOnHoverOnly;
+            config.video.frequency.onHoverEnabled = dt.dictionaryColorizeOnHoverOnly;
+
+            // Migrate dictionaryTokenReadingAnnotation to dictionaryTokenAnnotationConfig
+            if (dt.dictionaryTokenReadingAnnotation === TokenReadingAnnotation.ALWAYS) {
+                config.onStatuses.forEach((s) => (s.reading = true));
+                config.onStates[TokenState.IGNORED].reading = true;
+            } else if (dt.dictionaryTokenReadingAnnotation === TokenReadingAnnotation.LEARNING_OR_BELOW) {
+                for (let tokenStatus: TokenStatus = 0; tokenStatus <= TokenStatus.LEARNING; ++tokenStatus) {
+                    config.onStatuses[tokenStatus].reading = true;
+                }
+            } else if (dt.dictionaryTokenReadingAnnotation === TokenReadingAnnotation.UNKNOWN_OR_BELOW) {
+                for (let tokenStatus: TokenStatus = 0; tokenStatus <= TokenStatus.UNKNOWN; ++tokenStatus) {
+                    config.onStatuses[tokenStatus].reading = true;
+                }
+            }
+            if (dt.dictionaryDisplayIgnoredTokenReadings) config.onStates[TokenState.IGNORED].reading = true;
+
+            // Migrate dictionaryTokenFrequencyAnnotation to dictionaryTokenAnnotationConfig
+            if (dt.dictionaryTokenFrequencyAnnotation === TokenFrequencyAnnotation.ALWAYS) {
+                config.onStatuses.forEach((s) => (s.frequency = true));
+                config.onStates[TokenState.IGNORED].frequency = true;
+            } else if (dt.dictionaryTokenFrequencyAnnotation === TokenFrequencyAnnotation.UNCOLLECTED_ONLY) {
+                config.onStatuses[TokenStatus.UNCOLLECTED].frequency = true;
+            }
+
+            (dt as any).dictionaryTokenAnnotationConfig = config;
+        }
+        if (dt.dictionaryTokenAnnotationConfig.colorizeEnabled !== dt.dictionaryColorizeSubtitles) {
+            dt.dictionaryTokenAnnotationConfig.colorizeEnabled = dt.dictionaryColorizeSubtitles;
+        }
+
+        // Ensure dictionaryTokenAnnotationConfig has the correct length
+        while (dt.dictionaryTokenAnnotationConfig.onStatuses.length < NUM_TOKEN_STATUSES) {
+            dt.dictionaryTokenAnnotationConfig.onStatuses.push({
+                reading: false,
+                frequency: false,
+                pitchAccent: false,
+            });
+        }
+        while (dt.dictionaryTokenAnnotationConfig.onStatuses.length > NUM_TOKEN_STATUSES) {
+            dt.dictionaryTokenAnnotationConfig.onStatuses.pop();
+        }
+        while (dt.dictionaryTokenAnnotationConfig.onStates.length < NUM_TOKEN_STATES) {
+            dt.dictionaryTokenAnnotationConfig.onStates.push({
+                reading: false,
+                frequency: false,
+                pitchAccent: false,
+            });
+        }
+        while (dt.dictionaryTokenAnnotationConfig.onStates.length > NUM_TOKEN_STATES) {
+            dt.dictionaryTokenAnnotationConfig.onStates.pop();
+        }
+
+        // Default for new settings
+        if (!dt.dictionaryYomitanParser) (dt as any).dictionaryYomitanParser = defaultTrack.dictionaryYomitanParser;
+        if (dt.dictionaryAutoGenerateStatistics === undefined) {
+            (dt as any).dictionaryAutoGenerateStatistics = defaultTrack.dictionaryAutoGenerateStatistics;
+        }
+        if (dt.dictionaryWaniKaniApiToken === undefined) {
+            (dt as any).dictionaryWaniKaniApiToken = defaultTrack.dictionaryWaniKaniApiToken;
+        }
+        if (dt.dictionaryMatchAcrossScripts === undefined) {
+            (dt as any).dictionaryMatchAcrossScripts = defaultTrack.dictionaryMatchAcrossScripts;
+        }
+    }
+    while (dictionaryTracks.length < NUM_DICTIONARY_TRACKS) {
+        dictionaryTracks.push(defaultTrack);
+    }
+    while (dictionaryTracks.length > NUM_DICTIONARY_TRACKS) {
+        dictionaryTracks.pop();
+    }
+};
+
+export const ensureConsistencyOnRead = (settings: Partial<AsbplayerSettings>) => {
+    ensureDictionaryTracksConsistency(settings);
+
+    let keyBindSetModified = false;
+    const newKeyBindSet: any = {};
+    let ankiFieldSettingsModified = false;
+    const newAnkiFieldSettings: any = {};
+
+    if (settings.keyBindSet !== undefined) {
+        const keyBindSet = settings.keyBindSet;
+
+        for (const key of Object.keys(defaultSettings.keyBindSet)) {
+            const keyBindName = key as KeyBindName;
+
+            if (keyBindSet[keyBindName] === undefined) {
+                newKeyBindSet[keyBindName] = defaultSettings.keyBindSet[keyBindName];
+                keyBindSetModified = true;
+            } else {
+                newKeyBindSet[keyBindName] = keyBindSet[keyBindName];
+            }
+        }
+    }
+
+    if (settings.ankiFieldSettings !== undefined) {
+        const ankiFieldSettings = settings.ankiFieldSettings;
+
+        for (const key of Object.keys(defaultSettings.ankiFieldSettings)) {
+            const fieldName = key as keyof AnkiFieldSettings;
+
+            if (ankiFieldSettings[fieldName] === undefined) {
+                newAnkiFieldSettings[fieldName] = defaultSettings.ankiFieldSettings[fieldName];
+                ankiFieldSettingsModified = true;
+            } else {
+                newAnkiFieldSettings[fieldName] = ankiFieldSettings[fieldName];
+            }
+        }
+    }
+
+    if (!ankiFieldSettingsModified && !keyBindSetModified) {
+        return settings;
+    }
+
+    return { ...settings, ...{ ankiFieldSettings: newAnkiFieldSettings }, ...{ keyBindSet: newKeyBindSet } };
+};
+
 type SettingsKey = keyof AsbplayerSettings;
 
 const complexValuedKeys = Object.fromEntries(
@@ -366,7 +709,7 @@ const complexValuedKeys = Object.fromEntries(
 );
 
 export class SettingsProvider {
-    private _storage;
+    private _storage: SettingsStorage;
     private _complexValues: { [key: string]: any } = {};
 
     constructor(storage: SettingsStorage) {
@@ -384,7 +727,7 @@ export class SettingsProvider {
     }
 
     async get<K extends keyof AsbplayerSettings>(keys: K[]): Promise<Pick<AsbplayerSettings, K>> {
-        let parameters: Partial<AsbplayerSettings> = {};
+        const parameters: Partial<AsbplayerSettings> = {};
 
         for (const key of keys) {
             parameters[key] = defaultSettings[key];
@@ -394,7 +737,7 @@ export class SettingsProvider {
         const result: any = {};
 
         for (const key in parameters) {
-            const value = data[key as SettingsKey] ?? defaultSettings[key as SettingsKey];
+            const value = (data && data[key as SettingsKey]) ?? defaultSettings[key as SettingsKey];
 
             if (complexValuedKeys[key]) {
                 const lastValue = this._complexValues[key as SettingsKey];
@@ -410,50 +753,7 @@ export class SettingsProvider {
             }
         }
 
-        return this._ensureConsistencyOnRead(result) as Pick<AsbplayerSettings, K>;
-    }
-
-    private _ensureConsistencyOnRead(settings: Partial<AsbplayerSettings>) {
-        let keyBindSetModified = false;
-        let newKeyBindSet: any = {};
-        let ankiFieldSettingsModified = false;
-        let newAnkiFieldSettings: any = {};
-
-        if (settings.keyBindSet !== undefined) {
-            const keyBindSet = settings.keyBindSet;
-
-            for (const key of Object.keys(defaultSettings.keyBindSet)) {
-                const keyBindName = key as KeyBindName;
-
-                if (keyBindSet[keyBindName] === undefined) {
-                    newKeyBindSet[keyBindName] = defaultSettings.keyBindSet[keyBindName];
-                    keyBindSetModified = true;
-                } else {
-                    newKeyBindSet[keyBindName] = keyBindSet[keyBindName];
-                }
-            }
-        }
-
-        if (settings.ankiFieldSettings !== undefined) {
-            const ankiFieldSettings = settings.ankiFieldSettings;
-
-            for (const key of Object.keys(defaultSettings.ankiFieldSettings)) {
-                const fieldName = key as keyof AnkiFieldSettings;
-
-                if (ankiFieldSettings[fieldName] === undefined) {
-                    newAnkiFieldSettings[fieldName] = defaultSettings.ankiFieldSettings[fieldName];
-                    ankiFieldSettingsModified = true;
-                } else {
-                    newAnkiFieldSettings[fieldName] = ankiFieldSettings[fieldName];
-                }
-            }
-        }
-
-        if (!ankiFieldSettingsModified && !keyBindSetModified) {
-            return settings;
-        }
-
-        return { ...settings, ...{ ankiFieldSettings: newAnkiFieldSettings }, ...{ keyBindSet: newKeyBindSet } };
+        return ensureConsistencyOnRead(result) as Pick<AsbplayerSettings, K>;
     }
 
     async set(settings: Partial<AsbplayerSettings>): Promise<void> {
@@ -461,16 +761,18 @@ export class SettingsProvider {
     }
 
     private async _ensureConsistencyOnWrite(settings: Partial<AsbplayerSettings>) {
+        ensureDictionaryTracksConsistency(settings);
+
         if (settings.customAnkiFields === undefined) {
             return settings;
         }
         const customAnkiFieldSettings =
             settings.customAnkiFieldSettings ??
-            ((
+            (
                 await this._storage.get({
                     customAnkiFieldSettings: defaultSettings.customAnkiFieldSettings,
                 })
-            ).customAnkiFieldSettings as CustomAnkiFieldSettings);
+            ).customAnkiFieldSettings!;
 
         let modifyCustomAnkiFieldSettings = false;
 
@@ -489,7 +791,7 @@ export class SettingsProvider {
     }
 
     async activeProfile() {
-        return await this._storage.activeProfile();
+        return this._storage.activeProfile();
     }
 
     async setActiveProfile(name: string | undefined) {
@@ -497,7 +799,7 @@ export class SettingsProvider {
     }
 
     async profiles() {
-        return await this._storage.profiles();
+        return this._storage.profiles();
     }
 
     async addProfile(name: string) {
@@ -522,7 +824,7 @@ export const prefixKey = (key: string, profile: string) => {
 };
 
 export const unprefixKey = (key: string, profile: string) => {
-    return (key as string).substring(profile.length + 7);
+    return key.substring(profile.length + 7);
 };
 
 export const prefixedSettings = <P extends string>(
@@ -532,7 +834,7 @@ export const prefixedSettings = <P extends string>(
     const prefixed: any = {};
 
     for (const key of Object.keys(settings)) {
-        prefixed[prefixKey(key as keyof AsbplayerSettings, profile)] = settings[key as keyof AsbplayerSettings];
+        prefixed[prefixKey(key, profile)] = settings[key as keyof AsbplayerSettings];
     }
 
     return prefixed;
@@ -542,7 +844,7 @@ export const unprefixedSettings = <P extends string>(settings: Partial<Asbplayer
     const unprefixed: any = {};
 
     for (const key of Object.keys(settings)) {
-        const unprefixedKey = unprefixKey(key as keyof AsbplayerSettingsProfile<P>, profile);
+        const unprefixedKey = unprefixKey(key, profile);
         unprefixed[unprefixedKey] = settings[key as keyof AsbplayerSettingsProfile<P>];
     }
 

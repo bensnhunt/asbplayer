@@ -1,10 +1,12 @@
-import SvgIcon from '@material-ui/core/SvgIcon';
+import type { SvgIconProps } from '@mui/material/SvgIcon';
+import SvgIcon from '@mui/material/SvgIcon';
 
-const LogoIcon = () => {
+const LogoIcon = ({ style, ...rest }: SvgIconProps) => {
     return (
         <SvgIcon
             viewBox="0 0 28 28"
-            style={{ background: 'linear-gradient(150deg, #ff1f62, #49007a 160%)', borderRadius: 3 }}
+            style={{ background: 'linear-gradient(150deg, #ff1f62, #49007a 160%)', borderRadius: 3, ...style }}
+            {...rest}
         >
             <path
                 fill="white"

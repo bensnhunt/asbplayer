@@ -1,6 +1,6 @@
-import { ExtensionVersionMessage } from '@project/common';
+import type { ExtensionVersionMessage } from '@project/common';
 import { chromeCommandBindsToKeyBinds } from '@project/common/settings';
-import ChromeExtension from '../services/chrome-extension';
+import ChromeExtension from '@project/common/app/services/chrome-extension';
 import { useEffect, useState } from 'react';
 
 const initialExtension = new ChromeExtension();
@@ -16,8 +16,16 @@ const listenForVersion = (callback: (extension: ChromeExtension) => void) => {
             if (event.data.message.command === 'version') {
                 const message = event.data.message as ExtensionVersionMessage;
                 const extensionCommands = message.extensionCommands ?? {};
-
-                callback(new ChromeExtension(message.version, chromeCommandBindsToKeyBinds(extensionCommands)));
+                const pageConfig = message.pageConfig;
+                const browserFeatures = message.browserFeatures;
+                callback(
+                    new ChromeExtension(
+                        message.version,
+                        chromeCommandBindsToKeyBinds(extensionCommands),
+                        pageConfig,
+                        browserFeatures
+                    )
+                );
             }
         }
     };
@@ -30,14 +38,16 @@ const listenForVersion = (callback: (extension: ChromeExtension) => void) => {
 };
 
 const unbindInitialListener = listenForVersion((extension) => (realExtension = extension));
+export type AsbplayerComponent = 'sidePanel' | 'videoPlayer' | 'application' | 'statisticsPopup';
 
 export interface ChromeExtensionOptions {
-    sidePanel: boolean;
+    component: AsbplayerComponent;
 }
 
-export const useChromeExtension = ({ sidePanel }: ChromeExtensionOptions) => {
+export const useChromeExtension = ({ component }: ChromeExtensionOptions) => {
     const [extension, setExtension] = useState<ChromeExtension>(initialExtension);
-    extension.sidePanel = sidePanel;
+    extension.sidePanel = component === 'sidePanel';
+    extension.videoPlayer = component === 'videoPlayer';
 
     useEffect(() => {
         unbindInitialListener();

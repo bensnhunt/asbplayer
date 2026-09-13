@@ -26,7 +26,7 @@ export default class ControlsController {
             e.classList.add('asbplayer-hide');
         }
 
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
             setTimeout(() => resolve(undefined), 0);
         });
     }
@@ -57,8 +57,8 @@ export default class ControlsController {
 
     *_samplePoints() {
         const rect = this.video.getBoundingClientRect();
-        const stepX = rect.width / 25;
-        const stepY = rect.height / 25;
+        const stepX = rect.width / 12;
+        const stepY = rect.height / 12;
         const maxX = rect.width + rect.x;
         const maxY = rect.height + rect.y;
 
@@ -83,14 +83,23 @@ export default class ControlsController {
             return;
         }
 
+        if (rootNode instanceof ShadowRoot && !rootNode.contains(element)) {
+            return;
+        }
+
         const host: Element | undefined = (rootNode as ShadowRoot).host;
+
         let current = element;
         yield current;
 
         while (true) {
             const parent = current.parentElement;
 
-            if (!parent || parent.contains(this.video) || (host !== undefined && parent.contains(host))) {
+            if (
+                !parent ||
+                parent.contains(this.video) ||
+                (host !== undefined && (parent.contains(host) || parent.isSameNode(host)))
+            ) {
                 break;
             }
 

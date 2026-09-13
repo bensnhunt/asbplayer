@@ -1,16 +1,20 @@
-import React, { useEffect, useState, useLayoutEffect } from 'react';
-import makeStyles from '@material-ui/styles/makeStyles';
-import Card from '@material-ui/core/Card';
-import CardMedia from '@material-ui/core/CardMedia';
-import Dialog from '@material-ui/core/Dialog';
-import { Image as CommonImage } from '@project/common';
+import React, { useState, useLayoutEffect } from 'react';
+import makeStyles from '@mui/styles/makeStyles';
+import Card from '@mui/material/Card';
+import CardMedia from '@mui/material/CardMedia';
+import type { MediaFragment } from '@project/common';
+import { useImageData } from '@project/common/hooks/use-image-data';
+import Slider from '@mui/material/Slider';
+import Modal from '@mui/material/Modal';
+import { humanReadableTime } from '@project/common/util';
+import Tooltip from '@project/common/components/Tooltip';
 
 interface ImageDimensions {
     width: number;
     height: number;
 }
 
-const useStyles = makeStyles((theme) => ({
+const useStyles = makeStyles(() => ({
     image: ({ width, height }: ImageDimensions) => ({
         width: width,
         height: height,
@@ -38,14 +42,38 @@ function useWindowSize() {
 
 interface Props {
     open: boolean;
-    image?: CommonImage;
+    image?: MediaFragment;
+    interval?: number[];
+    timestampInterval?: number[];
     onClose: () => void;
+    onTimestampChange: (timestamp: number) => void;
+    onTimestampIntervalChange?: (timestampInterval: number[]) => void;
 }
 
-export default function ImageDialog({ open, image, onClose }: Props) {
-    const [dataUrl, setDataUrl] = useState<string>();
-    const [width, setWidth] = useState<number>(0);
-    const [height, setHeight] = useState<number>(0);
+interface ValueLabelComponentProps {
+    children: React.ReactElement;
+    open: boolean;
+    value: number;
+}
+
+const ValueLabelComponent = ({ children, open, value }: ValueLabelComponentProps) => {
+    return (
+        <Tooltip open={open} enterTouchDelay={0} placement="bottom" title={value}>
+            {children}
+        </Tooltip>
+    );
+};
+
+export default function ImageDialog({
+    open,
+    image,
+    interval,
+    timestampInterval,
+    onClose,
+    onTimestampChange,
+    onTimestampIntervalChange,
+}: Props) {
+    const { width, height, dataUrl } = useImageData({ image, smoothTransition: true });
     const [windowWidth, windowHeight] = useWindowSize();
 
     let resizeRatio;
@@ -58,40 +86,71 @@ export default function ImageDialog({ open, image, onClose }: Props) {
 
     const classes = useStyles({ width: width * resizeRatio, height: height * resizeRatio });
 
-    useEffect(() => {
-        setDataUrl(undefined);
-        async function fetchImage() {
-            if (!image) {
-                return;
-            }
-
-            const dataUrl = await image.dataUrl();
-            const img = new Image();
-            img.onload = () => {
-                setWidth(img.width);
-                setHeight(img.height);
-                setDataUrl(dataUrl);
-            };
-            img.src = dataUrl;
-        }
-
-        fetchImage();
-    }, [image]);
-
-    if (!image || !dataUrl) {
+    if (!image || !dataUrl || !open) {
         return null;
     }
 
+    const webm = image.extension === 'webm';
+
     return (
-        <Dialog open={open} onClose={onClose} maxWidth="lg">
-            <Card>
-                <CardMedia
-                    className={classes.image}
-                    image={dataUrl}
-                    title={image.name}
-                    style={{ width: width * resizeRatio, height: height * resizeRatio }}
-                />
-            </Card>
-        </Dialog>
+        <div>
+            <Modal disableRestoreFocus style={{ width: '100vw', height: '100vh' }} open={open} onClose={onClose}>
+                <div
+                    style={{
+                        position: 'absolute',
+                        width: width * resizeRatio,
+                        height: height * resizeRatio,
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                    }}
+                >
+                    <Card>
+                        {webm ? (
+                            <video
+                                className={classes.image}
+                                src={dataUrl}
+                                title={image.name}
+                                controls
+                                autoPlay
+                                loop
+                                muted
+                            />
+                        ) : (
+                            <CardMedia className={classes.image} image={dataUrl} title={image.name} style={{}} />
+                        )}
+                    </Card>
+                    {interval && image.canChangeTimestamp && !webm && (
+                        <Slider
+                            slots={{ valueLabel: ValueLabelComponent }}
+                            color="primary"
+                            value={image.timestamp}
+                            min={interval[0]}
+                            max={interval[1]}
+                            onChange={(_: unknown, newValue: number | number[]) =>
+                                onTimestampChange(newValue as number)
+                            }
+                            valueLabelFormat={(v) => humanReadableTime(v, true)}
+                            valueLabelDisplay="on"
+                            track={false}
+                        />
+                    )}
+                    {webm && interval && timestampInterval && onTimestampIntervalChange && (
+                        <Slider
+                            slots={{ valueLabel: ValueLabelComponent }}
+                            color="primary"
+                            value={timestampInterval}
+                            min={interval[0]}
+                            max={interval[1]}
+                            onChange={(_: unknown, newValue: number | number[]) =>
+                                onTimestampIntervalChange(newValue as number[])
+                            }
+                            valueLabelFormat={(v) => humanReadableTime(v, true)}
+                            valueLabelDisplay="on"
+                        />
+                    )}
+                </div>
+            </Modal>
+        </div>
     );
 }
