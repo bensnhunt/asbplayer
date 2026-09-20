@@ -1,14 +1,11 @@
+import type { AsbplayerSettings, SettingsStorage, Profile } from '@project/common/settings';
 import {
-    AsbplayerSettings,
-    SettingsStorage,
     unprefixedSettings,
     prefixedSettings,
     defaultSettings,
-    Profile,
+    activeProfileKey,
+    profilesKey,
 } from '@project/common/settings';
-
-const activeProfileKey = 'activeSettingsProfile';
-const profilesKey = 'settingsProfiles';
 
 export interface StorageArea {
     set(items: { [key: string]: any }): Promise<void>;
@@ -24,14 +21,14 @@ export class ExtensionSettingsStorage implements SettingsStorage {
     private readonly _storage: StorageArea;
 
     constructor(storage?: StorageArea) {
-        this._storage = storage ?? chrome.storage.local;
+        this._storage = storage ?? browser.storage.local;
     }
 
     async get(keysAndDefaults: Partial<AsbplayerSettings>) {
         const activeProfile = await this.activeProfile();
 
         if (activeProfile === undefined) {
-            return await this._storage.get(keysAndDefaults);
+            return this._storage.get(keysAndDefaults);
         }
 
         return unprefixedSettings(
@@ -51,7 +48,8 @@ export class ExtensionSettingsStorage implements SettingsStorage {
     }
 
     async activeProfile(): Promise<Profile | undefined> {
-        const name = (await this._storage.get(activeProfileKey))[activeProfileKey];
+        const result = await this._storage.get(activeProfileKey);
+        const name = result && result[activeProfileKey];
 
         if (name === undefined) {
             return undefined;
@@ -77,7 +75,8 @@ export class ExtensionSettingsStorage implements SettingsStorage {
     }
 
     async profiles(): Promise<Profile[]> {
-        return (await this._storage.get({ [profilesKey]: [] }))[profilesKey] ?? [];
+        const result = await this._storage.get({ [profilesKey]: [] });
+        return result ? (result[profilesKey] ?? []) : [];
     }
 
     async addProfile(name: string): Promise<void> {

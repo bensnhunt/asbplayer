@@ -1,16 +1,24 @@
 const key = 'tabRequestingActiveTabPermission';
 
-export const getTabRequestingActiveTabPermission = async () => {
-    const savedTab = (await chrome.storage.session.get(key))[key];
+interface SavedTab {
+    tabId: number;
+    url: string;
+    src: string;
+}
 
-    if (savedTab === undefined) {
+export const getTabRequestingActiveTabPermission = async () => {
+    const result = await browser.storage.session.get(key);
+    const tab = result ? result[key] : undefined;
+
+    if (!tab) {
         return undefined;
     }
 
+    const savedTab = tab as SavedTab;
     const currentTabInfo = await tabInfo(savedTab.tabId);
 
     if (currentTabInfo === undefined || currentTabInfo.url !== savedTab.url) {
-        await chrome.storage.session.remove(key);
+        await browser.storage.session.remove(key);
         return undefined;
     }
 
@@ -22,15 +30,16 @@ export const setRequestingActiveTabPermission = async (tabId: number, src: strin
         const tab = await tabInfo(tabId);
 
         if (tab === undefined) {
-            await chrome.storage.session.remove(key);
-        } else {
-            await chrome.storage.session.set({ [key]: { tabId, src, url: tab.url } });
+            await browser.storage.session.remove(key);
+        } else if (tab.id !== undefined) {
+            const savedTab = { tabId, src, url: tab.url };
+            await browser.storage.session.set({ [key]: savedTab });
         }
     } else {
-        await chrome.storage.session.remove(key);
+        await browser.storage.session.remove(key);
     }
 };
 
 const tabInfo = async (tabId: number) => {
-    return (await chrome.tabs.query({})).find((t) => t.id === tabId);
+    return browser.tabs.get(tabId);
 };

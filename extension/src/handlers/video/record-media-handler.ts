@@ -1,5 +1,6 @@
-import ImageCapturer from '../../services/image-capturer';
-import {
+import { asbError } from '@project/common/util';
+import type ImageCapturer from '@project/extension/src/services/image-capturer';
+import type {
     AudioModel,
     Command,
     ImageModel,
@@ -9,12 +10,12 @@ import {
     ExtensionToVideoCommand,
     ScreenshotTakenMessage,
     CardModel,
-    AudioErrorCode,
 } from '@project/common';
-import { SettingsProvider } from '@project/common/settings';
-import { CardPublisher } from '../../services/card-publisher';
-import AudioRecorderService from '../../services/audio-recorder-service';
-import { DrmProtectedStreamError } from '../../services/audio-recorder-delegate';
+import { AudioErrorCode, ImageErrorCode, PostMineAction } from '@project/common';
+import type { SettingsProvider } from '@project/common/settings';
+import type { CardPublisher } from '@project/extension/src/services/card-publisher';
+import type AudioRecorderService from '@project/extension/src/services/audio-recorder-service';
+import { DrmProtectedStreamError } from '@project/extension/src/services/audio-recorder-service';
 
 export default class RecordMediaHandler {
     private readonly _audioRecorder: AudioRecorderService;
@@ -42,43 +43,54 @@ export default class RecordMediaHandler {
         return 'record-media-and-forward-subtitle';
     }
 
-    async handle(command: Command<Message>, sender: chrome.runtime.MessageSender) {
-        const senderTab = sender.tab!;
+    async handle(command: Command<Message>, sender: Browser.runtime.MessageSender) {
         const recordMediaCommand = command as VideoToExtensionCommand<RecordMediaAndForwardSubtitleMessage>;
-        await this._recordAndForward(recordMediaCommand, sender, senderTab);
+        await this._recordAndForward(recordMediaCommand, sender);
     }
 
     private async _recordAndForward(
         recordMediaCommand: VideoToExtensionCommand<RecordMediaAndForwardSubtitleMessage>,
-        sender: chrome.runtime.MessageSender,
-        senderTab: chrome.tabs.Tab
+        sender: Browser.runtime.MessageSender
     ) {
-        const subtitle = recordMediaCommand.message.subtitle;
+        const message = recordMediaCommand.message;
+        const subtitle = message.subtitle;
         let audioPromise = undefined;
         let imagePromise = undefined;
         let imageModel: ImageModel | undefined = undefined;
         let audioModel: AudioModel | undefined = undefined;
-        const preferMp3 = await this._settingsProvider.getSingle('preferMp3');
+        let encodeAsMp3 = false;
 
-        if (recordMediaCommand.message.record) {
-            const time =
-                (subtitle.end - subtitle.start) / recordMediaCommand.message.playbackRate +
-                recordMediaCommand.message.audioPaddingEnd;
-            audioPromise = this._audioRecorder.startWithTimeout(time, preferMp3, {
+        const tabId = sender.tab?.id;
+        if (tabId === undefined) throw new Error('Cannot record media without a valid tab ID');
+
+        if (message.record) {
+            const time = (subtitle.end - subtitle.start) / message.playbackRate + message.audioPaddingEnd;
+
+            if (message.postMineAction !== PostMineAction.showAnkiDialog) {
+                encodeAsMp3 = await this._settingsProvider.getSingle('preferMp3');
+            }
+
+            audioPromise = this._audioRecorder.startWithTimeout(time, encodeAsMp3, {
                 src: recordMediaCommand.src,
-                tabId: sender.tab?.id!,
+                tabId,
             });
         }
 
-        if (recordMediaCommand.message.screenshot) {
-            const { maxWidth, maxHeight, rect, frameId } = recordMediaCommand.message;
-            imagePromise = this._imageCapturer.capture(
-                senderTab.id!,
-                recordMediaCommand.src,
-                Math.min(subtitle.end - subtitle.start, recordMediaCommand.message.imageDelay),
-                { maxWidth, maxHeight, rect, frameId }
+        if (message.screenshot) {
+            const { maxWidth, maxHeight, rect, frameId } = message;
+            const screenshotDelay = Math.max(
+                0,
+                message.record
+                    ? message.mediaTimestamp - subtitle.start + message.audioPaddingStart
+                    : message.imageDelay
             );
-            imagePromise.then(() => {
+            imagePromise = this._imageCapturer.capture(tabId, recordMediaCommand.src, screenshotDelay, {
+                maxWidth,
+                maxHeight,
+                rect,
+                frameId,
+            });
+            void imagePromise.finally(() => {
                 const screenshotTakenCommand: ExtensionToVideoCommand<ScreenshotTakenMessage> = {
                     sender: 'asbplayer-extension-to-video',
                     message: {
@@ -86,19 +98,15 @@ export default class RecordMediaHandler {
                     },
                     src: recordMediaCommand.src,
                 };
-                chrome.tabs.sendMessage(senderTab.id!, screenshotTakenCommand);
+                void browser.tabs.sendMessage(tabId, screenshotTakenCommand);
             });
         }
 
         if (audioPromise) {
-            const {
-                audioPaddingStart: paddingStart,
-                audioPaddingEnd: paddingEnd,
-                playbackRate,
-            } = recordMediaCommand.message;
+            const { audioPaddingStart: paddingStart, audioPaddingEnd: paddingEnd, playbackRate } = message;
             const baseAudioModel: AudioModel = {
                 base64: '',
-                extension: preferMp3 ? 'mp3' : 'webm',
+                extension: encodeAsMp3 ? 'mp3' : 'webm',
                 paddingStart,
                 paddingEnd,
                 playbackRate,
@@ -123,25 +131,35 @@ export default class RecordMediaHandler {
         }
 
         if (imagePromise) {
-            await imagePromise;
+            try {
+                await imagePromise;
 
-            // Use the last screenshot taken to allow user to re-take screenshot while audio is recording
-            imageModel = {
-                base64: this._imageCapturer.lastImageBase64!,
-                extension: 'jpeg',
-            };
+                // Use the last screenshot taken to allow user to re-take screenshot while audio is recording
+                imageModel = {
+                    base64: this._imageCapturer.lastImageBase64!,
+                    extension: 'jpeg',
+                };
+            } catch (e) {
+                asbError('recording/screenshot', e);
+                imageModel = {
+                    base64: '',
+                    extension: 'jpeg',
+                    error: ImageErrorCode.captureFailed,
+                };
+            }
         }
 
+        const { isBulkExport, noteId, ...messageWithoutBulkFlag } = message;
         const card: CardModel = {
             image: imageModel,
             audio: audioModel,
-            ...recordMediaCommand.message,
+            ...messageWithoutBulkFlag,
         };
-        this._cardPublisher.publish(
-            card,
-            recordMediaCommand.message.postMineAction,
-            senderTab.id!,
-            recordMediaCommand.src
-        );
+
+        if (isBulkExport) {
+            void this._cardPublisher.publishBulk(card, tabId, recordMediaCommand.src);
+        } else {
+            void this._cardPublisher.publish(card, message.postMineAction, tabId, recordMediaCommand.src, noteId);
+        }
     }
 }

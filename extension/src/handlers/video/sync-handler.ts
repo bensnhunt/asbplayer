@@ -1,4 +1,5 @@
-import {
+import { asbError } from '@project/common/util';
+import type {
     Command,
     ExtensionSyncMessage,
     ExtensionToAsbPlayerCommand,
@@ -6,7 +7,7 @@ import {
     PlayerSyncMessage,
     VideoToExtensionCommand,
 } from '@project/common';
-import TabRegistry from '../../services/tab-registry';
+import type TabRegistry from '@project/extension/src/services/tab-registry';
 
 export default class SyncHandler {
     private readonly tabRegistry: TabRegistry;
@@ -23,20 +24,35 @@ export default class SyncHandler {
         return 'sync';
     }
 
-    async handle(command: Command<Message>, sender: chrome.runtime.MessageSender) {
+    async handle(command: Command<Message>, sender: Browser.runtime.MessageSender) {
         try {
             const extensionSyncCommand = command as VideoToExtensionCommand<ExtensionSyncMessage>;
             await this.tabRegistry.publishTabsToAsbplayers();
-            const asbplayerId = await this.tabRegistry.findAsbplayer((asbplayer) => {
-                if (asbplayer.receivedTabs === undefined || sender.tab === undefined || asbplayer.sidePanel) {
-                    return false;
-                }
+            const asbplayerId = await this.tabRegistry.findAsbplayer({
+                filter: (asbplayer) => {
+                    if (asbplayer.receivedTabs === undefined || sender.tab === undefined || asbplayer.sidePanel) {
+                        return false;
+                    }
 
-                return (
-                    asbplayer.receivedTabs.find(
-                        (tab) => tab.id === sender.tab!.id && tab.src === extensionSyncCommand.src
-                    ) !== undefined
-                );
+                    if (extensionSyncCommand.message.withSyncedAsbplayerOnly) {
+                        return (
+                            asbplayer.syncedVideoElement !== undefined &&
+                            asbplayer.syncedVideoElement.id === sender.tab?.id &&
+                            asbplayer.syncedVideoElement.src === extensionSyncCommand.src
+                        );
+                    }
+
+                    if (extensionSyncCommand.message.withAsbplayerId) {
+                        return asbplayer.id === extensionSyncCommand.message.withAsbplayerId;
+                    }
+
+                    return (
+                        asbplayer.receivedTabs.find(
+                            (tab) => tab.id === sender.tab!.id && tab.src === extensionSyncCommand.src
+                        ) !== undefined
+                    );
+                },
+                allowTabCreation: !extensionSyncCommand.message.withSyncedAsbplayerOnly,
             });
 
             const playerSyncCommand: ExtensionToAsbPlayerCommand<PlayerSyncMessage> = {
@@ -50,9 +66,14 @@ export default class SyncHandler {
                 tabId: sender.tab!.id!,
             };
 
-            this.tabRegistry.publishCommandToAsbplayers({ asbplayerId, commandFactory: () => playerSyncCommand });
+            if (asbplayerId !== undefined) {
+                void this.tabRegistry.publishCommandToAsbplayers({
+                    asbplayerId,
+                    commandFactory: () => playerSyncCommand,
+                });
+            }
         } catch (error) {
-            console.error(error);
+            asbError('video/sync', error);
         }
     }
 }

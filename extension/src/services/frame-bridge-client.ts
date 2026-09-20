@@ -1,4 +1,5 @@
-import { HttpPostMessage, Message, TabToExtensionCommand, VideoToExtensionCommand } from '@project/common';
+import { asbError } from '@project/common/util';
+import type { HttpPostMessage, Message, TabToExtensionCommand, VideoToExtensionCommand } from '@project/common';
 
 export interface FetchOptions {
     videoSrc?: string;
@@ -12,7 +13,7 @@ export default class FrameBridgeClient {
     private frameId?: string;
     private windowMessageListener?: (event: MessageEvent) => void;
     private bindPromise?: Promise<void>;
-    private serverMessageListener?: (message: any) => void;
+    private serverMessageListener?: (message: any) => Promise<void>;
 
     constructor(frame: HTMLIFrameElement, fetchOptions?: FetchOptions) {
         this.frame = frame;
@@ -66,7 +67,7 @@ export default class FrameBridgeClient {
     }
 
     onMessage(listener: (message: Message) => void) {
-        this.serverMessageListener = listener;
+        this.serverMessageListener = async (message) => listener(message);
     }
 
     unbind() {
@@ -100,7 +101,9 @@ export default class FrameBridgeClient {
                             this._resolveHttpPost(message.message as HttpPostMessage);
                         } else {
                             if (this.serverMessageListener) {
-                                this.serverMessageListener(message.message);
+                                void this.serverMessageListener(message.message).catch((error) =>
+                                    asbError('bridge', error)
+                                );
                             }
                         }
                         break;
@@ -133,9 +136,9 @@ export default class FrameBridgeClient {
         let httpPostCommand: VideoToExtensionCommand<HttpPostMessage> | TabToExtensionCommand<HttpPostMessage>;
         const httpPostMessage: HttpPostMessage = {
             command: 'http-post',
-            url: message.url as string,
-            body: message.body as any,
-            messageId: message.messageId as string,
+            url: message.url,
+            body: message.body,
+            messageId: message.messageId,
         };
 
         if (this.fetchOptions.videoSrc === undefined) {
@@ -151,10 +154,10 @@ export default class FrameBridgeClient {
             };
         }
 
-        chrome.runtime.sendMessage(httpPostCommand, (postResponse) => {
+        browser.runtime.sendMessage(httpPostCommand, (postResponse) => {
             const response = postResponse
                 ? { ...postResponse, messageId: message.messageId }
-                : { error: chrome.runtime.lastError?.message, messageId: message.messageId };
+                : { error: browser.runtime.lastError?.message, messageId: message.messageId };
             this.frame.contentWindow?.postMessage(
                 {
                     sender: 'asbplayer-video',

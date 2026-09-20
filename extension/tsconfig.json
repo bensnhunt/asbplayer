@@ -1,16 +1,16 @@
 {
+    "extends": "./.wxt/tsconfig.json",
     "compilerOptions": {
-        "outDir": "./dist",
-        "allowJs": true,
-        "lib": ["dom", "DOM.Iterable", "ES2021"],
-        "target": "ES2020",
-        "module": "ES2020",
+        "lib": ["DOM", "DOM.Iterable", "ESNext"],
         "jsx": "react-jsx",
-        "esModuleInterop": true,
-        "strict": true,
         "downlevelIteration": true,
-        "resolveJsonModule": true,
-        "moduleResolution": "Node"
-    },
-    "include": ["./src/**/*", "decs.d.ts"]
+        "useDefineForClassFields": true,
+        "allowImportingTsExtensions": true,
+        "isolatedModules": true,
+        "moduleDetection": "force",
+        "noUnusedLocals": false,
+        "noUnusedParameters": false,
+        "noFallthroughCasesInSwitch": true,
+        "noUncheckedSideEffectImports": true
+    }
 }

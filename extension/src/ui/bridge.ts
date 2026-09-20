@@ -1,9 +1,10 @@
-import { Message, MessageWithId } from '@project/common';
+import type { Message, MessageWithId } from '@project/common';
 
 export default class Bridge {
     private readonly _resolves: { [key: string]: (response: any) => void } = {};
     private _clientMessageListeners: ((message: any) => void)[] = [];
     private _serverMessageListeners: ((message: any) => void)[] = [];
+    private _serverReadyListeners: (() => void)[] = [];
 
     sendMessageFromClient(message: Message) {
         if ('messageId' in message) {
@@ -28,10 +29,23 @@ export default class Bridge {
         };
     }
 
+    serverIsReady() {
+        for (const l of this._serverReadyListeners) {
+            l();
+        }
+    }
+
     addServerMessageListener(listener: (message: Message) => void) {
         this._serverMessageListeners.push(listener);
         return () => {
             this._serverMessageListeners = this._serverMessageListeners.filter((l) => l !== listener);
+        };
+    }
+
+    addServerReadyListener(listener: () => void) {
+        this._serverReadyListeners.push(listener);
+        return () => {
+            this._serverReadyListeners = this._serverReadyListeners.filter((l) => l !== listener);
         };
     }
 
@@ -41,7 +55,7 @@ export default class Bridge {
         }
     }
 
-    sendMessageFromServerAndExpectResponse(message: MessageWithId): Promise<any> {
+    sendMessageFromServerAndExpectResponse(message: MessageWithId, timeoutOverride?: number): Promise<any> {
         for (const l of this._serverMessageListeners) {
             l(message);
         }
@@ -53,12 +67,13 @@ export default class Bridge {
                     reject('Request timed out');
                     delete this._resolves[message.messageId];
                 }
-            }, 5000);
+            }, timeoutOverride ?? 5000);
         });
     }
 
     unbind() {
         this._clientMessageListeners = [];
         this._serverMessageListeners = [];
+        this._serverReadyListeners = [];
     }
 }

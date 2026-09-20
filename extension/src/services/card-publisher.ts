@@ -1,26 +1,30 @@
-import {
+import { asbError, humanReadableTime } from '@project/common/util';
+import type {
     CardExportedMessage,
     CardModel,
     CardSavedMessage,
     CardUpdatedMessage,
     ExtensionToVideoCommand,
     NotifyErrorMessage,
-    PostMineAction,
     ShowAnkiUiMessage,
+    ShowCardSelectUiMessage,
 } from '@project/common';
-import { humanReadableTime } from '@project/common/util';
-import { AnkiSettings, ankiSettingsKeys, SettingsProvider } from '@project/common/settings';
+import { PostMineAction } from '@project/common';
+import type { AnkiSettings, SettingsProvider } from '@project/common/settings';
+import { ankiSettingsKeys } from '@project/common/settings';
 import { v4 as uuidv4 } from 'uuid';
-import { exportCard } from '@project/common/anki';
-import { CopyHistoryRepository } from '@project/common/copy-history';
+import { exportCard, DuplicateNoteError } from '@project/common/anki';
+import { IndexedDBCopyHistoryRepository } from '@project/common/copy-history';
 
 export class CardPublisher {
     private readonly _settingsProvider: SettingsProvider;
+    bulkExportCancelled = false;
+
     constructor(settingsProvider: SettingsProvider) {
         this._settingsProvider = settingsProvider;
     }
 
-    async publish(card: CardModel, postMineAction?: PostMineAction, tabId?: number, src?: string) {
+    async publish(card: CardModel, postMineAction?: PostMineAction, tabId?: number, src?: string, noteId?: number) {
         const id = uuidv4();
         const savePromise = this._saveCardToRepository(id, card);
 
@@ -32,7 +36,9 @@ export class CardPublisher {
             if (postMineAction == PostMineAction.showAnkiDialog) {
                 this._showAnkiDialog(card, id, src, tabId);
             } else if (postMineAction == PostMineAction.updateLastCard) {
-                await this._updateLastCard(card, src, tabId);
+                await this._updateCard(card, src, tabId, noteId);
+            } else if (postMineAction === PostMineAction.showUpdateCardDialog) {
+                this._showUpdateCardDialog(card, src, tabId);
             } else if (postMineAction === PostMineAction.exportCard) {
                 await this._exportCard(card, src, tabId);
             } else if (postMineAction === PostMineAction.none) {
@@ -44,8 +50,26 @@ export class CardPublisher {
         }
     }
 
+    async publishBulk(card: CardModel, tabId?: number, src?: string) {
+        const id = uuidv4();
+        // (agloo) n.b. this could lead to out-of-order card saves if Anki is taking a while,
+        // which matters to users if they plan on reviewing cards in save order. If we get reports of this,
+        // consider putting a promise from here into a save queue.
+        void this._saveCardToRepository(id, card);
+
+        if (tabId === undefined || src === undefined) {
+            return;
+        }
+
+        if (this.bulkExportCancelled) {
+            return;
+        }
+
+        await this._exportCardBulk(card, src, tabId);
+    }
+
     private _notifySaved(savePromise: Promise<any>, card: CardModel, src: string, tabId: number) {
-        savePromise.then((saved: boolean) => {
+        void savePromise.then((saved: boolean) => {
             if (saved) {
                 const cardSavedCommand: ExtensionToVideoCommand<CardSavedMessage> = {
                     sender: 'asbplayer-extension-to-video',
@@ -57,7 +81,7 @@ export class CardPublisher {
                     src: src,
                 };
 
-                chrome.tabs.sendMessage(tabId, cardSavedCommand);
+                void browser.tabs.sendMessage(tabId, cardSavedCommand);
             }
         });
     }
@@ -76,12 +100,76 @@ export class CardPublisher {
             src,
         };
 
-        chrome.tabs.sendMessage(tabId, cardExportedCommand);
+        void browser.tabs.sendMessage(tabId, cardExportedCommand);
     }
 
-    private async _updateLastCard(card: CardModel, src: string | undefined, tabId: number) {
+    private async _exportCardBulk(card: CardModel, src: string | undefined, tabId: number) {
         const ankiSettings = (await this._settingsProvider.get(ankiSettingsKeys)) as AnkiSettings;
-        const cardName = await exportCard(card, ankiSettings, 'updateLast');
+
+        let cardName: string = '';
+        try {
+            cardName = await exportCard(card, ankiSettings, 'default');
+        } catch (e) {
+            if (e instanceof DuplicateNoteError) {
+                // This shouldn't be reachable right now, since we've allowed duplicate note exports.
+                // It's left in because without it we'd halt a bulk export on the first duplicate we
+                // find, and duplicates are very easy to encounter on shorter sentences.
+                const cardExportedCommand: ExtensionToVideoCommand<CardExportedMessage> = {
+                    sender: 'asbplayer-extension-to-video',
+                    message: {
+                        ...card,
+                        command: 'card-exported',
+                        cardName: '',
+                        isBulkExport: true,
+                        skippedDuplicate: true,
+                    },
+                    src,
+                };
+                void browser.tabs.sendMessage(tabId, cardExportedCommand);
+                return;
+            }
+            // If we're in the middle of a bulk export, a failure will hang the app.
+            // Signal an error and keep going to avoid this.
+            const cardExportedCommand: ExtensionToVideoCommand<CardExportedMessage> = {
+                sender: 'asbplayer-extension-to-video',
+                message: {
+                    ...card,
+                    command: 'card-exported',
+                    cardName: '',
+                    isBulkExport: true,
+                    skippedDuplicate: false,
+                    exportError: e instanceof Error ? e.message : 'Unknown error',
+                },
+                src,
+            };
+            void browser.tabs.sendMessage(tabId, cardExportedCommand);
+            return;
+        }
+
+        const cardExportedCommand: ExtensionToVideoCommand<CardExportedMessage> = {
+            sender: 'asbplayer-extension-to-video',
+            message: {
+                ...card,
+                command: 'card-exported',
+                cardName: `${cardName}`,
+                isBulkExport: true,
+            },
+            src,
+        };
+
+        void browser.tabs.sendMessage(tabId, cardExportedCommand);
+        void browser.runtime.sendMessage(cardExportedCommand);
+    }
+
+    private async _updateCard(card: CardModel, src: string | undefined, tabId: number, noteId?: number) {
+        const ankiSettings = (await this._settingsProvider.get(ankiSettingsKeys)) as AnkiSettings;
+        const cardName = await exportCard(
+            card,
+            ankiSettings,
+            noteId === undefined ? 'updateLast' : 'updateSpecific',
+            undefined,
+            noteId
+        );
 
         const cardUpdatedCommand: ExtensionToVideoCommand<CardUpdatedMessage> = {
             sender: 'asbplayer-extension-to-video',
@@ -93,7 +181,7 @@ export class CardPublisher {
             src,
         };
 
-        chrome.tabs.sendMessage(tabId, cardUpdatedCommand);
+        void browser.tabs.sendMessage(tabId, cardUpdatedCommand);
     }
 
     private _showAnkiDialog(card: CardModel, id: string, src: string | undefined, tabId: number) {
@@ -107,20 +195,33 @@ export class CardPublisher {
             src,
         };
 
-        chrome.tabs.sendMessage(tabId, showAnkiUiCommand);
+        void browser.tabs.sendMessage(tabId, showAnkiUiCommand);
+    }
+
+    private _showUpdateCardDialog(card: CardModel, src: string | undefined, tabId: number) {
+        const showCardSelectUiCommand: ExtensionToVideoCommand<ShowCardSelectUiMessage> = {
+            sender: 'asbplayer-extension-to-video',
+            message: {
+                ...card,
+                command: 'show-card-select-ui',
+            },
+            src,
+        };
+
+        void browser.tabs.sendMessage(tabId, showCardSelectUiCommand);
     }
 
     private async _saveCardToRepository(id: string, card: CardModel) {
         try {
             const storageLimit = await this._settingsProvider.getSingle('miningHistoryStorageLimit');
-            new CopyHistoryRepository(storageLimit).save({
+            await new IndexedDBCopyHistoryRepository(storageLimit).save({
                 ...card,
                 id: card.id ?? id,
                 timestamp: Date.now(),
             });
             return true;
         } catch (e) {
-            console.error(e);
+            asbError('copy-history', e);
             return false;
         }
     }
@@ -144,6 +245,6 @@ export class CardPublisher {
             },
             src,
         };
-        chrome.tabs.sendMessage(tabId, notifyErrorCommand);
+        void browser.tabs.sendMessage(tabId, notifyErrorCommand);
     }
 }

@@ -1,16 +1,22 @@
-import { Command, HttpPostMessage, Message } from '@project/common';
+import type { Command, HttpPostMessage, Message } from '@project/common';
+import { asbError } from '@project/common/util';
 
-const allowedKeys = ['version', 'action', 'params'];
+const allowedKeys = ['version', 'action', 'params', 'key', 'text', 'scanLength', 'parser', 'term'];
 const allowedActions = [
+    'areSuspended',
     'guiAddCards',
     'deckNames',
     'modelNames',
     'modelFieldNames',
+    'findCards',
     'findNotes',
+    'getIntervals',
     'guiBrowse',
     'requestPermission',
-    'findNotes',
+    'cardsInfo',
+    'cardsModTime',
     'notesInfo',
+    'notesModTime',
     'updateNoteFields',
     'addNote',
     'storeMediaFile',
@@ -29,7 +35,7 @@ export default class HttpPostHandler {
         return 'http-post';
     }
 
-    handle(command: Command<Message>, sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) {
+    handle(command: Command<Message>, sender: Browser.runtime.MessageSender, sendResponse: (response?: any) => void) {
         const message = command.message as HttpPostMessage;
 
         if (!this._validateBody(message.body)) {
@@ -43,12 +49,17 @@ export default class HttpPostHandler {
         })
             .then((response) => response.json())
             .then((json) => sendResponse(json))
-            .catch((e) => sendResponse({ error: e.message }));
+            .catch((e) => {
+                asbError('http-post', e);
+                sendResponse({ error: e.message });
+            });
 
         return true;
     }
 
     private _validateBody(body: any) {
+        if (body === null) return true;
+
         const bodyKeys = Object.keys(body);
 
         for (const k of bodyKeys) {

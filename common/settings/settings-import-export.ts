@@ -1,4 +1,7 @@
 import { Validator } from 'jsonschema';
+import type { AsbplayerSettings } from '@project/common/settings/settings';
+import { ensureConsistencyOnRead } from '@project/common/settings/settings-provider';
+import { download, getCurrentTimeString } from '@project/common/util';
 
 const keyBindSchema = {
     id: '/KeyBind',
@@ -22,6 +25,215 @@ const ankiFieldSchema = {
         },
     },
     required: ['order', 'display'],
+};
+const dictionaryTrackSchema = {
+    id: '/DictionaryTrack',
+    type: 'object',
+    properties: {
+        dictionaryColorizeSubtitles: {
+            type: 'boolean',
+        },
+        dictionaryAutoGenerateStatistics: {
+            type: 'boolean',
+        },
+        dictionaryColorizeOnHoverOnly: {
+            type: 'boolean',
+        },
+        dictionaryHighlightOnHover: {
+            type: 'boolean',
+        },
+        dictionaryTokenMatchStrategy: {
+            type: 'string',
+        },
+        dictionaryMatchAcrossScripts: {
+            type: 'boolean',
+        },
+        dictionaryTokenMatchStrategyPriority: {
+            type: 'string',
+        },
+        dictionaryYomitanUrl: {
+            type: 'string',
+        },
+        dictionaryYomitanParser: {
+            type: 'string',
+        },
+        dictionaryYomitanScanLength: {
+            type: 'number',
+        },
+        dictionaryTokenReadingAnnotation: {
+            type: 'string',
+        },
+        dictionaryDisplayIgnoredTokenReadings: {
+            type: 'boolean',
+        },
+        dictionaryTokenFrequencyAnnotation: {
+            type: 'string',
+        },
+        dictionaryAnkiDecks: {
+            type: 'array',
+            items: {
+                type: 'string',
+            },
+        },
+        dictionaryAnkiWordFields: {
+            type: 'array',
+            items: {
+                type: 'string',
+            },
+        },
+        dictionaryAnkiSentenceFields: {
+            type: 'array',
+            items: {
+                type: 'string',
+            },
+        },
+        dictionaryAnkiSentenceTokenMatchStrategy: {
+            type: 'string',
+        },
+        dictionaryAnkiMatureCutoff: {
+            type: 'number',
+        },
+        dictionaryAnkiTreatSuspended: {
+            type: ['string', 'number'],
+        },
+        dictionaryWaniKaniApiToken: {
+            type: 'string',
+        },
+        dictionaryTokenStyling: {
+            type: 'string',
+        },
+        dictionaryTokenStylingThickness: {
+            type: 'number',
+        },
+        dictionaryColorizeFullyKnownTokens: {
+            type: 'boolean',
+        },
+        dictionaryTokenStatusColors: {
+            type: 'array',
+            items: {
+                type: 'string',
+            },
+        },
+        dictionaryTokenStatusConfig: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    display: { type: 'boolean' },
+                    color: { type: 'string' },
+                    alpha: { type: 'string' },
+                },
+                required: ['display', 'color', 'alpha'],
+            },
+        },
+        dictionaryTokenAnnotationConfig: {
+            type: 'object',
+            properties: {
+                colorizeEnabled: {
+                    type: 'boolean',
+                },
+                video: {
+                    type: 'object',
+                    properties: {
+                        color: {
+                            type: 'object',
+                            properties: { onHoverEnabled: { type: 'boolean' }, size: { type: 'number' } },
+                            required: ['onHoverEnabled', 'size'],
+                        },
+                        reading: {
+                            type: 'object',
+                            properties: { onHoverEnabled: { type: 'boolean' }, size: { type: 'number' } },
+                            required: ['onHoverEnabled', 'size'],
+                        },
+                        frequency: {
+                            type: 'object',
+                            properties: { onHoverEnabled: { type: 'boolean' }, size: { type: 'number' } },
+                            required: ['onHoverEnabled', 'size'],
+                        },
+                        pitchAccent: {
+                            type: 'object',
+                            properties: { onHoverEnabled: { type: 'boolean' }, size: { type: 'number' } },
+                            required: ['onHoverEnabled', 'size'],
+                        },
+                    },
+                    required: ['color', 'reading', 'frequency', 'pitchAccent'],
+                },
+                subtitlePlayer: {
+                    type: 'object',
+                    properties: {
+                        color: {
+                            type: 'object',
+                            properties: { onHoverEnabled: { type: 'boolean' }, size: { type: 'number' } },
+                            required: ['onHoverEnabled', 'size'],
+                        },
+                        reading: {
+                            type: 'object',
+                            properties: { onHoverEnabled: { type: 'boolean' }, size: { type: 'number' } },
+                            required: ['onHoverEnabled', 'size'],
+                        },
+                        frequency: {
+                            type: 'object',
+                            properties: { onHoverEnabled: { type: 'boolean' }, size: { type: 'number' } },
+                            required: ['onHoverEnabled', 'size'],
+                        },
+                        pitchAccent: {
+                            type: 'object',
+                            properties: { onHoverEnabled: { type: 'boolean' }, size: { type: 'number' } },
+                            required: ['onHoverEnabled', 'size'],
+                        },
+                    },
+                    required: ['color', 'reading', 'frequency', 'pitchAccent'],
+                },
+                onStatuses: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            reading: { type: 'boolean' },
+                            frequency: { type: 'boolean' },
+                            pitchAccent: { type: 'boolean' },
+                        },
+                        required: ['reading', 'frequency', 'pitchAccent'],
+                    },
+                },
+                onStates: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            reading: { type: 'boolean' },
+                            frequency: { type: 'boolean' },
+                            pitchAccent: { type: 'boolean' },
+                        },
+                        required: ['reading', 'frequency', 'pitchAccent'],
+                    },
+                },
+            },
+            required: ['colorizeEnabled', 'video', 'subtitlePlayer', 'onStatuses', 'onStates'],
+        },
+    },
+    required: [
+        'dictionaryColorizeSubtitles',
+        'dictionaryColorizeOnHoverOnly',
+        'dictionaryHighlightOnHover',
+        'dictionaryTokenMatchStrategy',
+        'dictionaryTokenMatchStrategyPriority',
+        'dictionaryYomitanUrl',
+        'dictionaryYomitanScanLength',
+        'dictionaryTokenReadingAnnotation',
+        'dictionaryDisplayIgnoredTokenReadings',
+        'dictionaryTokenFrequencyAnnotation',
+        'dictionaryAnkiDecks',
+        'dictionaryAnkiWordFields',
+        'dictionaryAnkiSentenceFields',
+        'dictionaryAnkiSentenceTokenMatchStrategy',
+        'dictionaryAnkiMatureCutoff',
+        'dictionaryAnkiTreatSuspended',
+        'dictionaryTokenStyling',
+        'dictionaryTokenStylingThickness',
+        'dictionaryColorizeFullyKnownTokens',
+        'dictionaryTokenStatusColors',
+    ],
 };
 const textSubtitleSettingsSchema = {
     id: '/TextSubtitleSettings',
@@ -88,6 +300,12 @@ const settingsSchema = {
     properties: {
         ankiConnectUrl: {
             type: 'string',
+        },
+        ankiConnectApiKey: {
+            type: 'string',
+        },
+        ankiRefreshBrowserAfterUpdate: {
+            type: 'boolean',
         },
         deck: {
             type: 'string',
@@ -185,6 +403,9 @@ const settingsSchema = {
         subtitlePositionOffset: {
             type: 'number',
         },
+        topSubtitlePositionOffset: {
+            type: 'number',
+        },
         subtitleAlignment: {
             type: 'string',
         },
@@ -206,6 +427,18 @@ const settingsSchema = {
         maxImageHeight: {
             type: 'number',
         },
+        mediaFragmentFormat: {
+            type: 'string',
+        },
+        mediaFragmentTrimStart: {
+            type: 'number',
+        },
+        mediaFragmentTrimEnd: {
+            type: 'number',
+        },
+        mediaFragmentMaxClipLength: {
+            type: 'number',
+        },
         surroundingSubtitlesCountRadius: {
             type: 'number',
         },
@@ -215,11 +448,93 @@ const settingsSchema = {
         autoPausePreference: {
             type: 'number',
         },
+        subtitleTriggerStartOffset: {
+            type: 'number',
+        },
+        subtitleTriggerEndOffset: {
+            type: 'number',
+        },
+        subtitleTriggerGapEndOffset: {
+            type: 'number',
+        },
+        subtitleTriggerGapStartOffset: {
+            type: 'number',
+        },
+        seekableTracks: {
+            type: 'number',
+        },
+        autoCopyableTracks: {
+            type: 'number',
+        },
+        subtitleHtml: {
+            type: 'number',
+        },
+        seekDuration: {
+            type: 'number',
+        },
         speedChangeStep: {
             type: 'number',
         },
+        playbackRate: {
+            type: 'number',
+        },
+        playbackRateNotificationEnabled: {
+            type: 'boolean',
+        },
+        rememberPlaybackRate: {
+            type: 'boolean',
+        },
         fastForwardModePlaybackRate: {
             type: 'number',
+        },
+        fastForwardPlaybackMinimumSkipIntervalMs: {
+            type: 'number',
+        },
+        repeatCountPreference: {
+            type: 'number',
+        },
+        autoPauseResumeMode: {
+            type: 'string',
+            enum: ['manual', 'fixed', 'subtitleLength'],
+        },
+        autoPauseResumeDelayMs: {
+            type: 'number',
+        },
+        autoPauseFixedDurationMs: {
+            type: 'number',
+        },
+        autoPauseMinimumDurationMs: {
+            type: 'number',
+        },
+        autoPauseMaximumDurationMs: {
+            type: 'number',
+        },
+        autoPauseTimePerCharacterMs: {
+            type: 'number',
+        },
+        subtitleVisibility: {
+            type: 'string',
+            enum: ['whenDue', 'whilePaused'],
+        },
+        rememberPlaybackModes: {
+            type: 'boolean',
+        },
+        lastPlaybackModes: {
+            type: 'array',
+            items: {
+                type: 'number',
+            },
+        },
+        lastPlaybackPositions: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    fileName: { type: 'string' },
+                    position: { type: 'number' },
+                },
+                required: ['fileName', 'position'],
+            },
         },
         keyBindSet: {
             type: 'object',
@@ -235,9 +550,9 @@ const settingsSchema = {
                 toggleAsbplayerSubtitleTrack1: { $ref: '/KeyBind' },
                 toggleAsbplayerSubtitleTrack2: { $ref: '/KeyBind' },
                 toggleAsbplayerSubtitleTrack3: { $ref: '/KeyBind' },
-                toggleAsbplayerBlurTrack1: { $ref: '/KeyBind' },
-                toggleAsbplayerBlurTrack2: { $ref: '/KeyBind' },
-                toggleAsbplayerBlurTrack3: { $ref: '/KeyBind' },
+                unblurAsbplayerTrack1: { $ref: '/KeyBind' },
+                unblurAsbplayerTrack2: { $ref: '/KeyBind' },
+                unblurAsbplayerTrack3: { $ref: '/KeyBind' },
                 seekBackward: { $ref: '/KeyBind' },
                 seekForward: { $ref: '/KeyBind' },
                 seekToPreviousSubtitle: { $ref: '/KeyBind' },
@@ -251,12 +566,33 @@ const settingsSchema = {
                 copySubtitle: { $ref: '/KeyBind' },
                 ankiExport: { $ref: '/KeyBind' },
                 updateLastCard: { $ref: '/KeyBind' },
+                updateSelectedCard: { $ref: '/KeyBind' },
+                exportCard: { $ref: '/KeyBind' },
                 takeScreenshot: { $ref: '/KeyBind' },
+                toggleRecording: { $ref: '/KeyBind' },
+                selectSubtitleTrack: { $ref: '/KeyBind' },
                 decreasePlaybackRate: { $ref: '/KeyBind' },
                 increasePlaybackRate: { $ref: '/KeyBind' },
                 toggleSidePanel: { $ref: '/KeyBind' },
                 toggleRepeat: { $ref: '/KeyBind' },
+                toggleSubtitleVisibility: { $ref: '/KeyBind' },
+                cycleAutoPauseResumeMode: { $ref: '/KeyBind' },
+                moveBottomSubtitlesUp: { $ref: '/KeyBind' },
+                moveBottomSubtitlesDown: { $ref: '/KeyBind' },
+                moveTopSubtitlesUp: { $ref: '/KeyBind' },
+                moveTopSubtitlesDown: { $ref: '/KeyBind' },
+                markHoveredToken5: { $ref: '/KeyBind' },
+                markHoveredToken4: { $ref: '/KeyBind' },
+                markHoveredToken3: { $ref: '/KeyBind' },
+                markHoveredToken2: { $ref: '/KeyBind' },
+                markHoveredToken1: { $ref: '/KeyBind' },
+                markHoveredToken0: { $ref: '/KeyBind' },
+                toggleHoveredTokenIgnored: { $ref: '/KeyBind' },
+                openStatistics: { $ref: '/KeyBind' },
             },
+        },
+        recordWithAudioPlayback: {
+            type: 'boolean',
         },
         preferMp3: {
             type: 'boolean',
@@ -279,6 +615,15 @@ const settingsSchema = {
         themeType: {
             type: 'string',
         },
+        videoSubtitleSplitBehavior: {
+            type: 'string',
+        },
+        showSubtitleListMiningButton: {
+            type: 'boolean',
+        },
+        subtitleListTimestampDisplay: {
+            type: 'string',
+        },
         copyToClipboardOnMine: {
             type: 'boolean',
         },
@@ -299,6 +644,9 @@ const settingsSchema = {
         },
         subtitleRegexFilterTextReplacement: {
             type: 'string',
+        },
+        convertNetflixRuby: {
+            type: 'boolean',
         },
         language: {
             type: 'string',
@@ -359,6 +707,9 @@ const settingsSchema = {
         streamingAutoSync: {
             type: 'boolean',
         },
+        streamingAutoSyncPromptOnFailure: {
+            type: 'boolean',
+        },
         streamingLastLanguagesSynced: {
             type: 'object',
             additionalProperties: {
@@ -380,11 +731,35 @@ const settingsSchema = {
         streamingEnableOverlay: {
             type: 'boolean',
         },
+        whisperServerUrl: {
+            type: 'string',
+        },
+        whisperServerAuthToken: {
+            type: 'string',
+        },
         webSocketClientEnabled: {
             type: 'boolean',
         },
         webSocketServerUrl: {
             type: 'string',
+        },
+        pauseOnHoverMode: {
+            type: 'number',
+        },
+        lastSelectedAnkiExportMode: {
+            type: 'string',
+        },
+        dictionaryTracks: {
+            type: 'array',
+            items: {
+                $ref: '/DictionaryTrack',
+            },
+        },
+        thumbnailPreview: {
+            type: 'boolean',
+        },
+        subtitleAboveThumbnail: {
+            type: 'boolean',
         },
         _schema: {
             type: 'number',
@@ -392,17 +767,101 @@ const settingsSchema = {
     },
 };
 
+export type IgnorePathSegment = string | '*';
+export type IgnorePath = readonly IgnorePathSegment[];
+
+const ignorePaths: readonly IgnorePath[] = [
+    ['ankiConnectApiKey'],
+    ['whisperServerAuthToken'],
+    ['dictionaryTracks', '*', 'dictionaryWaniKaniApiToken'],
+    ['streamingPages'], // Ignored due to security risk (e.g. disable CSP)
+];
+const validationIgnorePaths: readonly IgnorePath[] = [['streamingPages']];
+
+export const omitPath = (value: any, path: IgnorePath): any => {
+    if (value === null || typeof value !== 'object' || !path.length) return value;
+
+    const [segment, ...remainingPath] = path;
+    if (segment === '*') {
+        if (Array.isArray(value)) return value.map((item) => omitPath(item, remainingPath));
+        return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, omitPath(child, remainingPath)]));
+    }
+
+    const copy = Array.isArray(value) ? [...value] : { ...value };
+    if (!remainingPath.length) {
+        delete copy[segment];
+    } else if (segment in copy) {
+        copy[segment] = omitPath(copy[segment], remainingPath);
+    }
+    return copy;
+};
+
+const omitPaths = (settings: any, paths: readonly IgnorePath[]) =>
+    paths.reduce((settingsCopy, ignorePath) => omitPath(settingsCopy, ignorePath), settings);
+
+export const settingsForExport = (settings: AsbplayerSettings): Partial<AsbplayerSettings> => {
+    return omitPaths(settings, ignorePaths);
+};
+
+const mergeIgnoredPath = (importedValue: any, currentValue: any, path: IgnorePath): any => {
+    if (importedValue === null || typeof importedValue !== 'object' || !path.length) return importedValue;
+
+    const [segment, ...remainingPath] = path;
+    if (segment === '*') {
+        if (Array.isArray(importedValue)) {
+            return importedValue.map((item, index) => mergeIgnoredPath(item, currentValue?.[index], remainingPath));
+        }
+        return Object.fromEntries(
+            Object.entries(importedValue).map(([key, value]) => [
+                key,
+                mergeIgnoredPath(value, currentValue?.[key], remainingPath),
+            ])
+        );
+    }
+
+    const mergedValue = Array.isArray(importedValue) ? [...importedValue] : { ...importedValue };
+    if (remainingPath.length && segment in importedValue) {
+        mergedValue[segment] = mergeIgnoredPath(importedValue[segment], currentValue?.[segment], remainingPath);
+    } else if (currentValue !== null && typeof currentValue === 'object' && segment in currentValue) {
+        mergedValue[segment] = currentValue[segment];
+    }
+    return mergedValue;
+};
+
+/**
+ * Restore ignored values from the current settings, regardless of whether they are present in an import.
+ */
+export const mergeImportedSettings = (
+    importedSettings: Partial<AsbplayerSettings>,
+    currentSettings: AsbplayerSettings
+): Partial<AsbplayerSettings> =>
+    ignorePaths.reduce(
+        (mergedSettings, ignorePath) => mergeIgnoredPath(mergedSettings, currentSettings, ignorePath),
+        importedSettings
+    );
+
+export const exportSettings = (settings: AsbplayerSettings) => {
+    download(
+        new Blob([JSON.stringify(settingsForExport(settings))], { type: 'application/json' }),
+        `asbplayer-settings-${getCurrentTimeString()}.json`
+    );
+};
+
 export const validateSettings = (settings: any) => {
+    const copy = omitPaths(settings, validationIgnorePaths);
     const validator = new Validator();
     validator.addSchema(keyBindSchema);
     validator.addSchema(ankiFieldSchema);
+    validator.addSchema(dictionaryTrackSchema);
     validator.addSchema(textSubtitleSettingsSchema);
-    const result = validator.validate(settings, settingsSchema);
-    validateAllKnownKeys(settings, []);
+    const result = validator.validate(copy, settingsSchema);
+    validateAllKnownKeys(copy, []);
 
     if (!result.valid) {
         throw new Error('Settings validation failed: ' + JSON.stringify(result.errors));
     }
+
+    return ensureConsistencyOnRead(copy as AsbplayerSettings);
 };
 
 const validateAllKnownKeys = (object: any, path: string[]) => {
@@ -447,6 +906,10 @@ const schemaForRef = (ref: string) => {
 
     if (ref === '/AnkiField') {
         return ankiFieldSchema;
+    }
+
+    if (ref === '/DictionaryTrack') {
+        return dictionaryTrackSchema;
     }
 
     if (ref === '/TextSubtitleSettings') {

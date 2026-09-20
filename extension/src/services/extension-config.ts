@@ -1,6 +1,7 @@
+import { asbError } from '@project/common/util';
 import { SettingsProvider } from '@project/common/settings';
-import { ExtensionSettingsStorage } from './extension-settings-storage';
-import { isFirefoxBuild } from './build-flags';
+import { ExtensionSettingsStorage } from '@project/extension/src/services/extension-settings-storage';
+import { isFirefoxBuild } from '@project/extension/src/services/build-flags';
 
 export interface ExtensionConfig {
     latest: {
@@ -8,6 +9,7 @@ export interface ExtensionConfig {
         url: string;
     };
     languages: LocalizationConfig[];
+    ttl?: number;
 }
 
 export interface LocalizationConfig {
@@ -20,20 +22,22 @@ const settings = new SettingsProvider(new ExtensionSettingsStorage());
 
 // As of this writing, session storage is not accessible to content scripts on Firefox so we use local storage instead.
 // Since unlike session storage, local storage is not automatically cleared, we clear it manually once a day.
-const storage = isFirefoxBuild ? chrome.storage.local : chrome.storage.session;
+const storage = isFirefoxBuild ? browser.storage.local : browser.storage.session;
 const firefoxTtl = 3600 * 24 * 1000; // 1 day
 
 export const fetchExtensionConfig = async (noCache = false): Promise<ExtensionConfig | undefined> => {
     if (!noCache) {
-        const cachedConfig = (await storage.get(['config'])).config;
+        const result = await storage.get(['config']);
+        const cachedConfig = result ? result.config : undefined;
 
-        if (cachedConfig === '-') {
+        if (cachedConfig === '-' || cachedConfig === null) {
             return undefined;
         }
 
         if (cachedConfig !== undefined) {
-            if (typeof cachedConfig.ttl !== 'number' || Date.now() < cachedConfig.ttl) {
-                return cachedConfig as ExtensionConfig;
+            const config = cachedConfig as ExtensionConfig;
+            if (typeof config.ttl !== 'number' || Date.now() < config.ttl) {
+                return config;
             }
         }
     }
@@ -52,7 +56,7 @@ export const fetchExtensionConfig = async (noCache = false): Promise<ExtensionCo
             return extensionJson as ExtensionConfig;
         }
     } catch (e) {
-        console.error(e);
+        asbError('config', e);
     }
 
     return undefined;

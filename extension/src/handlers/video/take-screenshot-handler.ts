@@ -1,5 +1,6 @@
-import ImageCapturer from '../../services/image-capturer';
-import {
+import { asbError } from '@project/common/util';
+import type ImageCapturer from '@project/extension/src/services/image-capturer';
+import type {
     Command,
     Message,
     VideoToExtensionCommand,
@@ -7,8 +8,10 @@ import {
     ScreenshotTakenMessage,
     TakeScreenshotFromExtensionMessage,
     AnkiUiSavedState,
+    ImageModel,
 } from '@project/common';
-import { CardPublisher } from '../../services/card-publisher';
+import { ImageErrorCode } from '@project/common';
+import type { CardPublisher } from '@project/extension/src/services/card-publisher';
 
 export default class TakeScreenshotHandler {
     private readonly _imageCapturer: ImageCapturer;
@@ -27,26 +30,40 @@ export default class TakeScreenshotHandler {
         return 'take-screenshot';
     }
 
-    async handle(command: Command<Message>, sender: chrome.runtime.MessageSender) {
-        const senderTab = sender.tab!;
+    async handle(command: Command<Message>, sender: Browser.runtime.MessageSender) {
         const takeScreenshotCommand = command as VideoToExtensionCommand<TakeScreenshotFromExtensionMessage>;
         const { maxWidth, maxHeight, rect, frameId } = takeScreenshotCommand.message;
-        const imageBase64 = await this._imageCapturer.capture(sender.tab!.id!, takeScreenshotCommand.src, 0, {
-            maxWidth,
-            maxHeight,
-            rect,
-            frameId,
-        });
+        let imageModel: ImageModel;
+
+        const tabId = sender.tab?.id;
+        if (tabId === undefined) throw new Error('Cannot take screenshot without a valid tab ID');
+
+        try {
+            const imageBase64 = await this._imageCapturer.capture(tabId, takeScreenshotCommand.src, 0, {
+                maxWidth,
+                maxHeight,
+                rect,
+                frameId,
+            });
+            imageModel = {
+                base64: imageBase64,
+                extension: 'jpeg',
+            };
+        } catch (e) {
+            asbError('recording/screenshot', e);
+            imageModel = {
+                base64: '',
+                extension: 'jpeg',
+                error: ImageErrorCode.captureFailed,
+            };
+        }
 
         let ankiUiState: AnkiUiSavedState | undefined;
 
         if (takeScreenshotCommand.message.ankiUiState) {
             ankiUiState = takeScreenshotCommand.message.ankiUiState;
-            ankiUiState.image = {
-                base64: imageBase64,
-                extension: 'jpeg',
-            };
-            this._cardPublisher.publish(
+            ankiUiState.image = imageModel;
+            void this._cardPublisher.publish(
                 {
                     audio: ankiUiState.audio,
                     image: ankiUiState.image,
@@ -58,7 +75,7 @@ export default class TakeScreenshotHandler {
                     mediaTimestamp: takeScreenshotCommand.message.mediaTimestamp,
                 },
                 undefined,
-                senderTab.id!,
+                tabId,
                 takeScreenshotCommand.src
             );
         }
@@ -72,6 +89,6 @@ export default class TakeScreenshotHandler {
             src: takeScreenshotCommand.src,
         };
 
-        chrome.tabs.sendMessage(senderTab.id!, screenshotTakenCommand);
+        void browser.tabs.sendMessage(tabId, screenshotTakenCommand);
     }
 }

@@ -1,19 +1,33 @@
-import {
+import { asbError, sourceString } from '@project/common/util';
+import type {
     AnkiUiInitialState,
     OpenAsbplayerSettingsMessage,
     CopyToClipboardMessage,
     TabToExtensionCommand,
     CardModel,
+    EncodeMp3Message,
+    AnkiDialogSettingsMessage,
+    ActiveProfileMessage,
+    SettingsUpdatedMessage,
+    AnkiUiBridgeExportedMessage,
+    EncodeMp3InServiceWorkerMessage,
+    CardUpdatedDialogMessage,
+    CardExportedDialogMessage,
 } from '@project/common';
-import { AnkiSettings, SettingsProvider, ankiSettingsKeys } from '@project/common/settings';
-import { sourceString } from '@project/common/util';
-import UiFrame from '../services/ui-frame';
-import { fetchLocalization } from '../services/localization-fetcher';
+import type { AnkiSettings, SettingsProvider } from '@project/common/settings';
+import { ankiSettingsKeys } from '@project/common/settings';
+import type UiFrame from '@project/extension/src/services/ui-frame';
+import { uiFrameForHtml } from '@project/extension/src/services/ui-frame';
+import { fetchLocalization } from '@project/extension/src/services/localization-fetcher';
+import { ExtensionGlobalStateProvider } from '@project/extension/src/services/extension-global-state-provider';
+import { isOnTutorialPage } from '@/services/tutorial';
+import { frameColorSchemeStyleBlock } from '@/services/frame-color-scheme';
+
+const globalStateProvider = new ExtensionGlobalStateProvider();
 
 // We need to write the HTML into the iframe manually so that the iframe keeps it's about:blank URL.
 // Otherwise, Chrome won't insert content scripts into the iframe (e.g. Yomichan won't work).
 async function html(language: string) {
-    const mp3WorkerSource = await (await fetch(chrome.runtime.getURL('./mp3-encoder-worker.js'))).text();
     return `<!DOCTYPE html>
                 <html lang="en">
                 <head>
@@ -21,7 +35,8 @@ async function html(language: string) {
                     <meta name="viewport" content="width=device-width, initial-scale=1" />
                     <title>asbplayer - Anki</title>
                     <style>
-                        @import url(${chrome.runtime.getURL('./assets/fonts.css')});
+                        @import url(${browser.runtime.getURL('/fonts/fonts.css')});
+                        ${frameColorSchemeStyleBlock()}
                     </style>
                 </head>
                 <body>
@@ -29,8 +44,7 @@ async function html(language: string) {
                     <script type="application/json" id="loc">${JSON.stringify(
                         await fetchLocalization(language)
                     )}</script>
-                    <script id="mp3-encoder-worker" type="javascript/worker">${mp3WorkerSource}</script>
-                    <script src="${chrome.runtime.getURL('./anki-ui.js')}"></script>
+                    <script type="module" src="${browser.runtime.getURL('/anki-ui.js')}"></script>
                 </body>
             </html>`;
 }
@@ -38,36 +52,59 @@ async function html(language: string) {
 export class TabAnkiUiController {
     private readonly _frame: UiFrame;
     private readonly _settings: SettingsProvider;
+    private readonly _inTutorial = isOnTutorialPage();
 
     constructor(settings: SettingsProvider) {
-        this._frame = new UiFrame(html);
+        this._frame = uiFrameForHtml(html);
         this._settings = settings;
     }
 
     async show(card: CardModel) {
-        const { themeType, language, ...ankiSettings } = await this._settings.get([
-            'themeType',
+        const { language, ...ankiDialogSettings } = await this._settings.get([
             'language',
+            'themeType',
+            'lastSelectedAnkiExportMode',
             ...ankiSettingsKeys,
         ]);
-        const client = await this._client(language, ankiSettings);
+        const profilesPromise = this._settings.profiles();
+        const activeProfilePromise = this._settings.activeProfile();
+        const globalStatePromise = globalStateProvider.getAll();
+        const client = await this._client(language, ankiDialogSettings);
         const state: AnkiUiInitialState = {
             type: 'initial',
             open: true,
             canRerecord: false,
-            settingsProvider: ankiSettings,
+            settings: ankiDialogSettings,
             source: sourceString(card.subtitleFileName, card.mediaTimestamp ?? 0),
-            themeType,
             dialogRequestedTimestamp: 0,
             ...card,
+            profiles: await profilesPromise,
+            activeProfile: (await activeProfilePromise)?.name,
+            ftueHasSeenAnkiDialogQuickSelect: (await globalStatePromise).ftueHasSeenAnkiDialogQuickSelectV2,
+            inTutorial: this._inTutorial,
         };
         client.updateState(state);
     }
 
     async updateSettings() {
-        const ankiSettings = await this._settings.get([...ankiSettingsKeys]);
+        const ankiDialogSettings = await this._settings.get([
+            'themeType',
+            'lastSelectedAnkiExportMode',
+            ...ankiSettingsKeys,
+        ]);
+
         if (this._frame.bound) {
-            this._frame.client().then((client) => client.sendMessage({ command: 'ankiSettings', value: ankiSettings }));
+            void this._frame.client().then(async (client) => {
+                const profilesPromise = this._settings.profiles();
+                const activeProfilePromise = this._settings.activeProfile();
+                const message: AnkiDialogSettingsMessage = {
+                    command: 'settings',
+                    settings: ankiDialogSettings,
+                    profiles: await profilesPromise,
+                    activeProfile: (await activeProfilePromise)?.name,
+                };
+                client.sendMessage(message);
+            });
         }
     }
 
@@ -81,31 +118,99 @@ export class TabAnkiUiController {
 
         if (isNewClient) {
             client.onMessage((message) => {
-                switch (message.command) {
-                    case 'openSettings':
-                        const openSettingsCommand: TabToExtensionCommand<OpenAsbplayerSettingsMessage> = {
-                            sender: 'asbplayer-video-tab',
-                            message: {
-                                command: 'open-asbplayer-settings',
-                            },
-                        };
-                        chrome.runtime.sendMessage(openSettingsCommand);
-                        return;
-                    case 'copy-to-clipboard':
-                        const copyToClipboardMessage = message as CopyToClipboardMessage;
-                        const copyToClipboardCommand: TabToExtensionCommand<CopyToClipboardMessage> = {
-                            sender: 'asbplayer-video-tab',
-                            message: {
-                                command: 'copy-to-clipboard',
-                                dataUrl: copyToClipboardMessage.dataUrl,
-                            },
-                        };
-                        chrome.runtime.sendMessage(copyToClipboardCommand);
-                        return;
-                    case 'resume':
-                        this._frame.hide();
-                        return;
-                }
+                void (async () => {
+                    switch (message.command) {
+                        case 'openSettings': {
+                            const openSettingsCommand: TabToExtensionCommand<OpenAsbplayerSettingsMessage> = {
+                                sender: 'asbplayer-video-tab',
+                                message: {
+                                    command: 'open-asbplayer-settings',
+                                },
+                            };
+                            void browser.runtime.sendMessage(openSettingsCommand);
+                            return;
+                        }
+                        case 'copy-to-clipboard': {
+                            const copyToClipboardMessage = message as CopyToClipboardMessage;
+                            const copyToClipboardCommand: TabToExtensionCommand<CopyToClipboardMessage> = {
+                                sender: 'asbplayer-video-tab',
+                                message: {
+                                    command: 'copy-to-clipboard',
+                                    dataUrl: copyToClipboardMessage.dataUrl,
+                                },
+                            };
+                            void browser.runtime.sendMessage(copyToClipboardCommand);
+                            return;
+                        }
+                        case 'encode-mp3': {
+                            const { base64, messageId, extension } = message as EncodeMp3Message;
+                            const encodeMp3Command: TabToExtensionCommand<EncodeMp3InServiceWorkerMessage> = {
+                                sender: 'asbplayer-video-tab',
+                                message: {
+                                    command: 'encode-mp3',
+                                    base64,
+                                    extension,
+                                },
+                            };
+                            const encodedBase64 = await browser.runtime.sendMessage(encodeMp3Command);
+                            client.sendMessage({
+                                messageId,
+                                base64: encodedBase64,
+                            });
+                            return;
+                        }
+                        case 'resume':
+                            this._frame.hide();
+                            return;
+                        case 'activeProfile': {
+                            const activeProfileMessage = message as ActiveProfileMessage;
+                            void this._settings.setActiveProfile(activeProfileMessage.profile).then(() => {
+                                const settingsUpdatedCommand: TabToExtensionCommand<SettingsUpdatedMessage> = {
+                                    sender: 'asbplayer-video-tab',
+                                    message: {
+                                        command: 'settings-updated',
+                                    },
+                                };
+                                void browser.runtime.sendMessage(settingsUpdatedCommand);
+                            });
+                            return;
+                        }
+                        case 'dismissedQuickSelectFtue':
+                            globalStateProvider
+                                .set({ ftueHasSeenAnkiDialogQuickSelectV2: true })
+                                .catch((error) => asbError('anki/ui', error));
+                            return;
+                        case 'exported': {
+                            const exportedMessage = message as AnkiUiBridgeExportedMessage;
+                            void this._settings.set({ lastSelectedAnkiExportMode: exportedMessage.mode }).then(() => {
+                                const settingsUpdatedCommand: TabToExtensionCommand<SettingsUpdatedMessage> = {
+                                    sender: 'asbplayer-video-tab',
+                                    message: {
+                                        command: 'settings-updated',
+                                    },
+                                };
+                                void browser.runtime.sendMessage(settingsUpdatedCommand);
+                            });
+                            return;
+                        }
+                        case 'card-updated-dialog': {
+                            const cardUpdatedDialogCommand: TabToExtensionCommand<CardUpdatedDialogMessage> = {
+                                sender: 'asbplayer-video-tab',
+                                message: message as CardUpdatedDialogMessage,
+                            };
+                            void browser.runtime.sendMessage(cardUpdatedDialogCommand);
+                            return;
+                        }
+                        case 'card-exported-dialog': {
+                            const cardExportedDialogCommand: TabToExtensionCommand<CardExportedDialogMessage> = {
+                                sender: 'asbplayer-video-tab',
+                                message: message as CardExportedDialogMessage,
+                            };
+                            void browser.runtime.sendMessage(cardExportedDialogCommand);
+                            return;
+                        }
+                    }
+                })().catch((error) => asbError('anki/ui', error));
             });
         }
 

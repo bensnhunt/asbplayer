@@ -4,7 +4,7 @@ const dragImageHeight = 300;
 export default class ImageElement {
     private readonly video: HTMLMediaElement;
     private imageElement?: HTMLDivElement;
-    private imageElementStylesInterval?: NodeJS.Timeout;
+    private imageElementStylesInterval?: ReturnType<typeof setInterval>;
 
     constructor(video: HTMLMediaElement) {
         this.video = video;
@@ -21,7 +21,7 @@ export default class ImageElement {
 
         const image = document.createElement('img');
         image.classList.add('asbplayer-image');
-        image.src = chrome.runtime.getURL('assets/image.png');
+        image.src = browser.runtime.getURL('/icon/image.png');
 
         this._applyImageContainerStyles(image, container);
 

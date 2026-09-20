@@ -1,5 +1,5 @@
-import { CopyHistoryItem, FileModel, SubtitleModel } from '@project/common';
-import Dexie, { liveQuery, Observable } from 'dexie';
+import type { CopyHistoryItem, FileModel, SubtitleModel } from '@project/common';
+import Dexie, { liveQuery } from 'dexie';
 
 class CopyHistoryDatabase extends Dexie {
     copyHistoryItems!: Dexie.Table<CopyHistoryRecord, number>;
@@ -26,6 +26,7 @@ class CopyHistoryDatabase extends Dexie {
                             originalStart: item.originalStart,
                             originalEnd: item.originalEnd,
                             track: item.track,
+                            index: item.index,
                         };
                         item.subtitle = subtitle;
                         delete item.text;
@@ -59,7 +60,15 @@ interface CopyHistoryRecord extends CopyHistoryItem {
     index?: number;
 }
 
-export class CopyHistoryRepository {
+export interface CopyHistoryRepository {
+    clear: () => Promise<void>;
+    fetch: (count: number) => Promise<CopyHistoryItem[]>;
+    liveFetch: (count: number, callback: (items: CopyHistoryItem[]) => void) => () => void;
+    save: (item: CopyHistoryItem) => Promise<void>;
+    delete: (id: string) => Promise<void>;
+}
+
+export class IndexedDBCopyHistoryRepository implements CopyHistoryRepository {
     private readonly _db = new CopyHistoryDatabase();
     private _limit: number;
 
@@ -72,7 +81,7 @@ export class CopyHistoryRepository {
     }
 
     async clear() {
-        await this._db.delete();
+        await this._db.copyHistoryItems.clear();
     }
 
     async fetch(count: number): Promise<CopyHistoryItem[]> {
@@ -80,15 +89,17 @@ export class CopyHistoryRepository {
             return [];
         }
 
-        const result = await await this._db.copyHistoryItems.reverse().limit(count).toArray();
+        const result = await this._db.copyHistoryItems.reverse().limit(count).toArray();
         result.reverse();
         return result;
     }
 
-    liveFetch(count: number): Observable<CopyHistoryItem[]> {
-        return liveQuery(() => {
+    liveFetch(count: number, callback: (items: CopyHistoryItem[]) => void): () => void {
+        const observable = liveQuery(() => {
             return this.fetch(count);
         });
+        const subscription = observable.subscribe(callback);
+        return () => subscription.unsubscribe();
     }
 
     async save(item: CopyHistoryItem) {

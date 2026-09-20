@@ -1,34 +1,43 @@
 import React from 'react';
-import Box from '@material-ui/core/Box';
-import Button from '@material-ui/core/Button';
-import Typography from '@material-ui/core/Typography';
-import { ChromeExtension } from '@project/common/app';
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import Typography from '@mui/material/Typography';
+import type { ChromeExtension } from '@project/common/app';
 import { useTranslation } from 'react-i18next';
-import CenteredGridItem from './CenteredGridItem';
-import CenteredGridContainer from './CenteredGridContainer';
-import SubtitlesIcon from '@material-ui/icons/Subtitles';
-import ListIcon from '@material-ui/icons/List';
-import { ButtonGroup } from '@material-ui/core';
+import CenteredGridItem from '@project/extension/src/ui/components/CenteredGridItem';
+import CenteredGridContainer from '@project/extension/src/ui/components/CenteredGridContainer';
+import LoadSubtitlesIcon from '@project/common/components/LoadSubtitlesIcon';
+import HistoryIcon from '@mui/icons-material/History';
+import ButtonGroup from '@mui/material/ButtonGroup';
+import TutorialIcon from '@project/common/components/TutorialIcon';
 
 interface Props {
     extension: ChromeExtension;
     videoElementCount: number;
+    miningHistoryCount: number;
     onLoadSubtitles: () => void;
     onShowMiningHistory: () => void;
+    onOpenUserGuide: () => void;
 }
 
 const VideoElementInfoText = ({ videoElementCount }: { videoElementCount: number }) => {
     const { t } = useTranslation();
     return (
         <Box p={3}>
-            <Typography variant="h6">
+            <Typography align="center" variant="h6">
                 {videoElementCount === 0 ? t('landing.noVideoElementsDetected') : t('landing.videoElementsDetected')}
             </Typography>
         </Box>
     );
 };
 
-const SidePanelHome = ({ videoElementCount, onLoadSubtitles, onShowMiningHistory: onOpenMiningHistory }: Props) => {
+const SidePanelHome = ({
+    videoElementCount,
+    miningHistoryCount,
+    onLoadSubtitles,
+    onShowMiningHistory,
+    onOpenUserGuide,
+}: Props) => {
     const { t } = useTranslation();
 
     return (
@@ -37,12 +46,19 @@ const SidePanelHome = ({ videoElementCount, onLoadSubtitles, onShowMiningHistory
                 <VideoElementInfoText videoElementCount={videoElementCount} />
             </CenteredGridItem>
             <CenteredGridItem>
-                <ButtonGroup variant="contained" color="secondary" orientation="vertical">
-                    <Button startIcon={<SubtitlesIcon />} disabled={videoElementCount === 0} onClick={onLoadSubtitles}>
+                <ButtonGroup variant="contained" color="primary" orientation="vertical">
+                    <Button
+                        startIcon={<LoadSubtitlesIcon />}
+                        disabled={videoElementCount === 0}
+                        onClick={onLoadSubtitles}
+                    >
                         {t('action.loadSubtitles')}
                     </Button>
-                    <Button startIcon={<ListIcon />} onClick={onOpenMiningHistory}>
-                        {t('bar.miningHistory')}
+                    <Button startIcon={<HistoryIcon />} onClick={onShowMiningHistory}>
+                        {`${t('bar.miningHistory')} (${miningHistoryCount})`}
+                    </Button>
+                    <Button startIcon={<TutorialIcon />} onClick={onOpenUserGuide}>
+                        {t('action.userGuide')}
                     </Button>
                 </ButtonGroup>
             </CenteredGridItem>

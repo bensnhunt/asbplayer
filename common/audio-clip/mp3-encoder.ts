@@ -7,8 +7,8 @@ export interface SerializableAudioBuffer {
 
 export default class Mp3Encoder {
     static async encode(blob: Blob, workerFactory: () => Worker | Promise<Worker>): Promise<Blob> {
-        return new Promise(async (resolve, reject) => {
-            var reader = new FileReader();
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
             reader.onload = async (e) => {
                 try {
                     const audioContext = new AudioContext();
@@ -19,7 +19,7 @@ export default class Mp3Encoder {
                     }
 
                     const audioBuffer = await audioContext.decodeAudioData(e.target.result as ArrayBuffer);
-                    const channels = [];
+                    const channels: Float32Array[] = [];
 
                     for (let i = 0; i < audioBuffer.numberOfChannels; ++i) {
                         channels.push(audioBuffer.getChannelData(i));

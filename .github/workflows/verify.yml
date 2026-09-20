@@ -12,7 +12,7 @@ jobs:
 
         strategy:
             matrix:
-                node-version: [18.x]
+                node-version: [22.x]
         steps:
             - uses: actions/checkout@v3
             - name: Use Node.js ${{ matrix.node-version }}
@@ -23,4 +23,5 @@ jobs:
             - run: npm install --global yarn
             - run: yarn set version 3.2.0
             - run: yarn install
-            - run: yarn run verify
+            - run: yarn workspace @project/extension run zip
+            - run: yarn workspace @project/client run build
