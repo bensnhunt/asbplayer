@@ -921,7 +921,9 @@ export default class VideoDataSyncController {
         }
 
         if (message.operation === 'capabilities') {
-            this._frame.clientIfLoaded?.updateState({ subtitleGeneration: { sourceUrl, state: 'loading' } });
+            this._frame.clientIfLoaded?.updateState({
+                subtitleGeneration: { sourceUrl, state: 'loading', generator: message.generator ?? 'whisper' },
+            });
         }
 
         const response = await this._requestSubtitleGeneration({ ...message, sourceUrl });
@@ -940,7 +942,12 @@ export default class VideoDataSyncController {
                     ? undefined
                     : response.job.id;
             this._frame.clientIfLoaded?.updateState({
-                subtitleGeneration: { sourceUrl, state: response.job.state, job: response.job },
+                subtitleGeneration: {
+                    sourceUrl,
+                    state: response.job.state,
+                    generator: response.job.generator ?? message.generator ?? 'whisper',
+                    job: response.job,
+                },
             });
 
             if (response.job.entry) {
@@ -978,7 +985,12 @@ export default class VideoDataSyncController {
 
         if (response.capabilities) {
             this._frame.clientIfLoaded?.updateState({
-                subtitleGeneration: { sourceUrl, state: 'ready', capabilities: response.capabilities },
+                subtitleGeneration: {
+                    sourceUrl,
+                    state: 'ready',
+                    generator: message.generator ?? 'whisper',
+                    capabilities: response.capabilities,
+                },
             });
         }
     }

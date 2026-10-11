@@ -36,6 +36,8 @@ import type {
     SubtitleGenerationJob,
     WhisperCapabilities,
     WhisperOptionValue,
+    SubtitleGenerator,
+    OcrOptions,
 } from '@project/common/whisper';
 import type {
     DictionaryLocalTokenInput,
@@ -581,7 +583,10 @@ export interface SubtitleGenerationMessage extends Message {
     readonly command: 'subtitle-generation';
     readonly operation: SubtitleGenerationOperation;
     readonly sourceUrl?: string;
+    /** Defaults to Whisper for older clients and services. */
+    readonly generator?: SubtitleGenerator;
     readonly whisperOptions?: Record<string, WhisperOptionValue>;
+    readonly ocrOptions?: OcrOptions;
     readonly jobId?: string;
     readonly cacheEntryId?: string;
 }
